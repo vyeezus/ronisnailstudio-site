@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roni's Nail Studio | Select Time Slot</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .booking-page {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 2rem 4rem 2rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            font-weight: 400;
+            color: var(--text-muted);
+            text-decoration: none;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: color 0.2s;
+            margin-bottom: 2rem;
+        }
+
+        .back-link:hover {
+            color: var(--text-accent);
+        }
+
+        .back-link::before {
+            content: "←";
+            font-size: 1.1rem;
+        }
+
+        .selected-services {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .service-tag {
+            font-family: var(--font-body);
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-accent);
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(178, 115, 154, 0.25);
+            padding: 0.5rem 1.25rem;
+            border-radius: 50px;
+            letter-spacing: 0.5px;
+        }
+
+        .square-frame-wrapper {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 32px;
+            padding: 2rem;
+            box-shadow: 0 15px 40px rgba(119, 78, 120, 0.05);
+            overflow: hidden;
+        }
+
+        .square-frame-wrapper iframe {
+            width: 100%;
+            height: 700px;
+            border: none;
+            border-radius: 20px;
+            background: #fff;
+        }
+
+        .frame-notice {
+            text-align: center;
+            font-family: var(--font-body);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 1.5rem;
+            font-style: italic;
+        }
+
+        @media (max-width: 900px) {
+            .square-frame-wrapper iframe {
+                height: 600px;
+            }
+            .hero {
+                padding-top: 4rem;
+                padding-bottom: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+    
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+
+    <div class="booking-page">
+        <a href="index.html" class="back-link">Back to Services</a>
+
+        <div class="form-section" style="margin-bottom: 2.5rem;">
+            <h2>Your Selections</h2>
+            <div id="selected-services" class="selected-services">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <div class="square-frame-wrapper">
+            <iframe id="square-frame" 
+                    src="" 
+                    title="Square Booking Calendar"
+                    allow="payment">
+            </iframe>
+        </div>
+        <p class="frame-notice">Powered by Square Appointments</p>
+    </div>
+
+    <script>
+        // Read selected services from URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const serviceNames = params.get('names');
+        const squareUrl = params.get('square_url');
+
+        // Populate the service tags
+        const container = document.getElementById('selected-services');
+        if (serviceNames) {
+            const names = serviceNames.split(',');
+            names.forEach(name => {
+                const tag = document.createElement('span');
+                tag.className = 'service-tag';
+                tag.textContent = decodeURIComponent(name.trim());
+                container.appendChild(tag);
+            });
+        }
+
+        // Load Square in the iframe
+        const iframe = document.getElementById('square-frame');
+        if (squareUrl) {
+            iframe.src = decodeURIComponent(squareUrl);
+        }
+    </script>
+</body>
+</html>

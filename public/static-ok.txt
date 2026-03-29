@@ -1,0 +1,1 @@
+If you see this file at /static-ok.txt, Netlify is serving your public folder. Next test: /api/ping (JSON from a serverless function).

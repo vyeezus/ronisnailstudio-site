@@ -1,0 +1,23 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# /api/* avoids clashes with Netlify “pretty URLs” and old static paths.
+[[redirects]]
+  from = "/api/ping"
+  to = "/.netlify/functions/ping"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/booking"
+  to = "/.netlify/functions/booking-proxy"
+  status = 200
+  force = true
+
+# Legacy email links (still works if you already sent /booking-action URLs)
+[[redirects]]
+  from = "/booking-action"
+  to = "/.netlify/functions/booking-proxy"
+  status = 200
+  force = true

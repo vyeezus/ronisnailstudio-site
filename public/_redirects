@@ -1,0 +1,4 @@
+# Rewrites (200) live in publish dir so drag-and-drop deploys always pick them up.
+/api/ping /.netlify/functions/ping 200!
+/api/booking /.netlify/functions/booking-proxy 200!
+/booking-action /.netlify/functions/booking-proxy 200!

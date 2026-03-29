@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reschedule | Roni's Nail Studio</title>
+    <meta name="description" content="Book a new appointment time at Roni's Nail Studio.">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Playfair+Display:ital,wght@0,400;0,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .reschedule-page { max-width: 560px; margin: 0 auto; padding: 3rem 1.5rem 5rem; text-align: center; }
+        .reschedule-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.75rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1rem; color: var(--text-main); }
+        .reschedule-page p { font-family: var(--font-body); font-size: 1rem; line-height: 1.7; color: var(--text-muted); margin-bottom: 1.25rem; }
+        .reschedule-actions { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 2rem; align-items: stretch; }
+        .reschedule-actions a {
+            display: inline-block; padding: 0.9rem 1.5rem; border-radius: 8px; text-decoration: none; font-family: var(--font-body); font-size: 0.95rem; font-weight: 500; letter-spacing: 0.04em;
+        }
+        .btn-primary { background: #111; color: #fff; border: 1px solid #111; }
+        .btn-primary:hover { opacity: 0.92; }
+        .btn-secondary { background: transparent; color: var(--text-main); border: 1px solid rgba(178, 115, 154, 0.35); }
+        .btn-secondary:hover { border-color: var(--text-accent); color: var(--text-accent); }
+        .back-home { margin-top: 2.5rem; font-size: 0.85rem; }
+        .back-home a { color: var(--text-muted); text-decoration: none; letter-spacing: 0.06em; text-transform: uppercase; }
+        .back-home a:hover { color: var(--text-accent); }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="reschedule-page">
+            <h1>Reschedule</h1>
+            <p>Your previous time no longer works? Choose your services and pick a new slot that fits you.</p>
+            <p style="font-size: 0.9rem;">Tip: if you still have the old appointment on the calendar, cancel it using the link in your reminder email before or after you book the new time.</p>
+            <div class="reschedule-actions">
+                <a href="index.html" class="btn-primary">Choose services &amp; book</a>
+                <a href="booking.html" class="btn-secondary" id="booking-direct">Open booking calendar</a>
+            </div>
+            <p class="back-home"><a href="index.html">← Back to home</a></p>
+        </section>
+    </main>
+    <script>
+        (function () {
+            var q = window.location.search;
+            if (q && q.length > 1) {
+                try { sessionStorage.setItem('rescheduleQuery', q); } catch (e) {}
+                var bd = document.getElementById('booking-direct');
+                if (bd) bd.href = 'booking.html' + q;
+            }
+        })();
+    </script>
+</body>
+</html>
