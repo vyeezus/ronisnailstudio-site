@@ -94,6 +94,30 @@ function clampDurationMinutes_(n) {
   return Math.max(15, Math.min(480, Math.round(x)));
 }
 
+/**
+ * Public website: clients may book only in the current calendar month and the next month (script TZ).
+ * Admin/owner POST handlers do not use this.
+ */
+function isDateInPublicBookingWindow_(yyyyMmDd) {
+  const tz = Session.getScriptTimeZone();
+  const raw = String(yyyyMmDd == null ? '' : yyyyMmDd).trim().split('T')[0].split(' ')[0];
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  if (mo < 1 || mo > 12) return false;
+  const now = new Date();
+  const cy = parseInt(Utilities.formatDate(now, tz, 'yyyy'), 10);
+  const cm = parseInt(Utilities.formatDate(now, tz, 'MM'), 10);
+  let ny = cy;
+  let nm = cm + 1;
+  if (nm > 12) {
+    nm = 1;
+    ny++;
+  }
+  return (y === cy && mo === cm) || (y === ny && mo === nm);
+}
+
 function parseDurationMinutesFromDescription_(description) {
   if (!description) return 0;
   const m = String(description).match(/DurationMinutes:\s*(\d+)/i);
@@ -1075,6 +1099,13 @@ function handleReschedulePost(d) {
   if (!d.eventId || !d.token || !d.date || !d.time) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
   }
+  const rs = d.date ? String(d.date).split('T')[0].trim() : '';
+  if (!rs || !/^\d{4}-\d{2}-\d{2}$/.test(rs)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_date' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!isDateInPublicBookingWindow_(rs)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_outside_booking_window' })).setMimeType(ContentService.MimeType.JSON);
+  }
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
@@ -1281,6 +1312,13 @@ function doPost(e) {
     }
     if (d.reschedule === true) {
       return handleReschedulePost(d);
+    }
+    const pubDateStr = d.date ? String(d.date).split('T')[0].trim() : '';
+    if (!pubDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(pubDateStr)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_date' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (!isDateInPublicBookingWindow_(pubDateStr)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_outside_booking_window' })).setMimeType(ContentService.MimeType.JSON);
     }
     const actionToken = generateActionToken();
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];

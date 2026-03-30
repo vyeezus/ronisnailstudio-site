@@ -106,6 +106,8 @@
         .btn-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; }
         .admin-book-page .cute-btn { flex: 1; min-width: 140px; border: none; cursor: pointer; font-family: var(--font-body); }
         .admin-book-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .admin-book-page .input-date-wrap { margin-bottom: 0.9rem; max-width: 100%; }
+        .admin-book-page .input-date-wrap input[type="date"] { margin-bottom: 0; }
         .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
         .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
         .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
@@ -184,7 +186,9 @@
             <label for="service">Service description</label>
             <textarea id="service" required placeholder="e.g. Structured Gel refill + Tier 2 art"></textarea>
             <label for="appt-date">Date</label>
-            <input type="date" id="appt-date" required>
+            <div class="input-date-wrap">
+                <input type="date" id="appt-date" required>
+            </div>
             <label for="appt-time">Time</label>
             <input type="text" id="appt-time" required placeholder="2:30 PM">
             <label for="duration">Duration (minutes)</label>

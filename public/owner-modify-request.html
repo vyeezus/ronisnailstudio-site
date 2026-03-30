@@ -15,6 +15,8 @@
         .owner-mod-page input:focus { outline: none; border-color: var(--text-accent); }
         .owner-mod-page .hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.75rem; margin-bottom: 1.25rem; }
         .owner-mod-page .cute-btn { width: 100%; border: none; cursor: pointer; font-family: var(--font-body); }
+        .owner-mod-page .input-date-wrap { margin-bottom: 1.25rem; max-width: 100%; }
+        .owner-mod-page .input-date-wrap input[type="date"] { margin-bottom: 0; }
         .owner-mod-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
         .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
@@ -36,7 +38,9 @@
             <div id="msg" class="msg" role="status"></div>
             <form id="mod-form">
                 <label for="prop-date">Proposed date</label>
-                <input type="date" id="prop-date" required>
+                <div class="input-date-wrap">
+                    <input type="date" id="prop-date" required>
+                </div>
                 <label for="prop-time">Proposed start time</label>
                 <input type="text" id="prop-time" placeholder="2:30 PM" required autocomplete="off">
                 <p class="hint">Use the same style as the booking site (e.g. 2:30 PM or 9:00 AM).</p>

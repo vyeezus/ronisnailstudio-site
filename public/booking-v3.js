@@ -124,6 +124,31 @@ function bootBookingPage() {
     currentYear = today.getFullYear();
     currentMonth = today.getMonth();
 
+    /** Calendar month index for comparisons (year * 12 + month 0–11). */
+    function monthKey(year, month0) {
+        return year * 12 + month0;
+    }
+
+    /** Earliest month shown in the picker; latest is current + 1 calendar month. */
+    const bookingWindowMinKey = monthKey(today.getFullYear(), today.getMonth());
+    const bookingWindowMaxKey = bookingWindowMinKey + 1;
+
+    function addCalendarMonths(year, month0, delta) {
+        const d = new Date(year, month0 + delta, 1);
+        return { year: d.getFullYear(), month: d.getMonth() };
+    }
+
+    function updateCalNavState() {
+        if (!prevBtn || !nextBtn) return;
+        const vk = monthKey(currentYear, currentMonth);
+        const atMin = vk <= bookingWindowMinKey;
+        const atMax = vk >= bookingWindowMaxKey;
+        prevBtn.disabled = atMin;
+        nextBtn.disabled = atMax;
+        prevBtn.setAttribute('aria-disabled', atMin ? 'true' : 'false');
+        nextBtn.setAttribute('aria-disabled', atMax ? 'true' : 'false');
+    }
+
     const calGrid = document.getElementById('cal-grid');
     const monthLabel = document.getElementById('cal-month-label');
     const prevBtn = document.getElementById('cal-prev');
@@ -335,6 +360,7 @@ function bootBookingPage() {
             }
             calGrid.appendChild(btn);
         }
+        updateCalNavState();
     }
 
     function formatDate(d) {
@@ -352,14 +378,18 @@ function bootBookingPage() {
     }
 
     prevBtn.addEventListener('click', () => {
-        currentMonth--;
-        if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+        const prev = addCalendarMonths(currentYear, currentMonth, -1);
+        if (monthKey(prev.year, prev.month) < bookingWindowMinKey) return;
+        currentYear = prev.year;
+        currentMonth = prev.month;
         renderCalendar();
     });
 
     nextBtn.addEventListener('click', () => {
-        currentMonth++;
-        if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+        const nxt = addCalendarMonths(currentYear, currentMonth, 1);
+        if (monthKey(nxt.year, nxt.month) > bookingWindowMaxKey) return;
+        currentYear = nxt.year;
+        currentMonth = nxt.month;
         renderCalendar();
     });
 
@@ -511,7 +541,9 @@ function bootBookingPage() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.status !== 'success') {
-                throw new Error(data.status || 'failed');
+                const err = new Error(data.message || data.status || 'failed');
+                err.apiMessage = data.message;
+                throw err;
             }
 
             document.getElementById('booking-flow').style.display = 'none';
@@ -532,7 +564,12 @@ function bootBookingPage() {
                 }
             });
         } catch (err) {
-            bookError.innerHTML = '<div class="booking-error">Submission failed. Please try again.</div>';
+            const apiMsg = err && err.apiMessage;
+            const msg =
+                apiMsg === 'date_outside_booking_window'
+                    ? 'That date isn’t open for booking yet. Please choose a day in this month or next month, then try again.'
+                    : 'Submission failed. Please try again.';
+            bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');
             confirmBtn.innerHTML = originalBtnText;

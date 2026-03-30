@@ -801,13 +801,42 @@ hr {
     }
 }
 
-/* Native date/time controls can use a large intrinsic width on mobile Safari */
+/* Native date/time: WebKit uses a wide intrinsic min-width; clip + inner constraints keep it aligned with text fields */
+.input-date-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    border-radius: 10px;
+}
+
+.input-date-wrap input[type="date"] {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    box-sizing: border-box;
+}
+
 input[type="date"],
 input[type="time"],
 input[type="datetime-local"] {
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
+    display: block;
+    width: 100%;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+    margin-inline-start: 0.25rem;
 }
 
 
