@@ -82,6 +82,29 @@ function getCRMSpreadsheet() {
   try { return SpreadsheetApp.openById(SPREADSHEET_ID); } catch (e) { return SpreadsheetApp.getActiveSpreadsheet(); }
 }
 
+/** Booking POST sends this; also embedded in event description for reschedule if calendar length is wrong. */
+function clampDurationMinutes_(n) {
+  const x = Number(n);
+  if (isNaN(x)) return 60;
+  return Math.max(15, Math.min(480, Math.round(x)));
+}
+
+function parseDurationMinutesFromDescription_(description) {
+  if (!description) return 0;
+  const m = String(description).match(/DurationMinutes:\s*(\d+)/i);
+  if (!m) return 0;
+  const v = parseInt(m[1], 10);
+  return isNaN(v) ? 0 : v;
+}
+
+/** Use the longer of calendar block length and DurationMinutes: line (fixes old 1h defaults vs 1h15 services). */
+function effectiveDurationMinutesFromEvent_(ev) {
+  const durMs = ev.getEndTime().getTime() - ev.getStartTime().getTime();
+  const fromCal = Math.round(durMs / 60000);
+  const fromDesc = parseDurationMinutesFromDescription_(ev.getDescription());
+  return Math.max(30, Math.max(fromCal, fromDesc));
+}
+
 /** Compare sheet E column to calendar start (yyyy-MM-dd in script TZ). */
 function syncSheetDateToYyyyMmDd_(value) {
   const tz = Session.getScriptTimeZone();
@@ -428,8 +451,7 @@ function doGet(e) {
     if (!ev) {
       return wrapRescheduleMeta_({ ok: false, error: 'event_missing' });
     }
-    const durMs = ev.getEndTime().getTime() - ev.getStartTime().getTime();
-    const durationMinutes = Math.max(30, Math.round(durMs / 60000));
+    const durationMinutes = effectiveDurationMinutesFromEvent_(ev);
     return wrapRescheduleMeta_({
       ok: true,
       service: found.service,
@@ -500,9 +522,9 @@ function handleReschedulePost(d) {
   if (!ev) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'event_missing' })).setMimeType(ContentService.MimeType.JSON);
   }
-  const durMs = ev.getEndTime().getTime() - ev.getStartTime().getTime();
+  const durMin = effectiveDurationMinutesFromEvent_(ev);
   const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
-  const newEnd = new Date(start.getTime() + durMs);
+  const newEnd = new Date(start.getTime() + durMin * 60000);
   ev.setTime(start, newEnd);
   ev.setTitle(clientName);
   sheet.getRange(rowIndex, 5).setValue(start);
@@ -534,7 +556,18 @@ function doPost(e) {
     SpreadsheetApp.flush();
     const c = CalendarApp.getCalendarById(CALENDAR_ID);
     const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
-    const ev = c.createEvent('PENDING: ' + d.clientName, start, new Date(start.getTime() + 3600000), { description: `Phone: ${d.phone}\nEmail: ${d.email}\nService: ${d.service}` });
+    const durMin = clampDurationMinutes_(d.durationMinutes);
+    const end = new Date(start.getTime() + durMin * 60000);
+    const desc =
+      'Phone: ' +
+      d.phone +
+      '\nEmail: ' +
+      d.email +
+      '\nService: ' +
+      d.service +
+      '\nDurationMinutes: ' +
+      durMin;
+    const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
     ev.setColor(PENDING_COLOR); s.getRange(row, 9).setValue(ev.getId());
     
     // Formatting for Owner Request

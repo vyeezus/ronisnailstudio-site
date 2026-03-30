@@ -397,6 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 service: serviceNames,
                 date: selectedDate,
                 time: selectedSlot,
+                durationMinutes: serviceMinutes,
             };
 
         try {
