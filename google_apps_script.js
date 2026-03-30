@@ -82,10 +82,39 @@ function getCRMSpreadsheet() {
   try { return SpreadsheetApp.openById(SPREADSHEET_ID); } catch (e) { return SpreadsheetApp.getActiveSpreadsheet(); }
 }
 
+/** Compare sheet E column to calendar start (yyyy-MM-dd in script TZ). */
+function syncSheetDateToYyyyMmDd_(value) {
+  const tz = Session.getScriptTimeZone();
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  }
+  const s = String(value == null ? '' : value).trim();
+  if (!s) return '';
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, tz, 'yyyy-MM-dd');
+  }
+  return s.split('T')[0].split(' ')[0];
+}
+
+/** Normalize time strings so sheet "2:00 PM" matches calendar formatting. */
+function normalizeTimeToken_(t) {
+  return String(t == null ? '' : t)
+    .trim()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
 /**
- * --- Concierge Sync ---
+ * --- Calendar → Sheet sync (drag/drop in Google Calendar) ---
+ * If the event start in your studio calendar no longer matches columns E–F, updates the sheet,
+ * clears the 2-day reminder flag (K), and emails the client.
+ *
+ * Automatic runs: run installCalendarSyncTrigger() once in the editor (every 10 minutes).
  */
 function syncCalendarToSpreadsheet() {
+  const tz = Session.getScriptTimeZone();
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
@@ -93,30 +122,68 @@ function syncCalendarToSpreadsheet() {
   for (let i = 1; i < data.length; i++) {
     const status = data[i][7];
     const eventId = data[i][8];
-    if ((status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING') && eventId && !eventId.includes('pending')) {
+    if (
+      (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING') &&
+      eventId &&
+      String(eventId).indexOf('pending') < 0
+    ) {
       const event = calendar.getEventById(eventId);
       if (!event) {
         sheet.getRange(i + 1, 8).setValue('CANCELLED');
         const email = data[i][6];
         if (email) {
-           const body = `<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px;"><h2 style="color: #1a1a1a; text-align: center; font-weight: 500;">Appointment Cancelled</h2><p style="text-align: center;">Hello ${data[i][1]}, your appointment at Roni's Nail Studio has been cancelled.</p></div>`;
-           MailApp.sendEmail({ to: email, name: "Roni's Nail Studio", subject: "Appointment Cancelled: Roni's Nail Studio", htmlBody: body });
+          const cn = escapeHtml(data[i][1]);
+          const body =
+            '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px;"><h2 style="color: #1a1a1a; text-align: center; font-weight: 500;">Appointment Cancelled</h2><p style="text-align: center;">Hello ' +
+            cn +
+            ", your appointment at Roni's Nail Studio has been cancelled.</p></div>";
+          MailApp.sendEmail({ to: email, name: "Roni's Nail Studio", subject: "Appointment Cancelled: Roni's Nail Studio", htmlBody: body });
         }
         continue;
       }
-      const sheetDateStr = (data[i][4] instanceof Date) ? Utilities.formatDate(data[i][4], Session.getScriptTimeZone(), "yyyy-MM-dd") : data[i][4].toString();
-      const sheetTimeStr = data[i][5].toString();
-      const calDateStr = Utilities.formatDate(event.getStartTime(), Session.getScriptTimeZone(), "yyyy-MM-dd");
-      const calTimeStr = Utilities.formatDate(event.getStartTime(), Session.getScriptTimeZone(), "h:mm a");
-      if (calDateStr !== sheetDateStr || calTimeStr !== sheetTimeStr) {
-        sheet.getRange(i + 1, 5).setValue(event.getStartTime());
-        sheet.getRange(i + 1, 6).setValue(calTimeStr);
-        const neatDate = Utilities.formatDate(event.getStartTime(), Session.getScriptTimeZone(), "EEEE, MMMM d, yyyy");
-        const body = `<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px;"><h2 style="color: #1a1a1a; text-align: center; font-weight: 500;">Appointment Update</h2><p style="text-align: center;">Hello ${data[i][1]}, your appointment at Roni's Nail Studio has been adjusted to ${neatDate} at ${calTimeStr}.</p></div>`;
-        MailApp.sendEmail({ to: data[i][6], name: "Roni's Nail Studio Update", subject: "Appointment Update: Roni's Nail Studio", htmlBody: body });
+      const sheetDateYmd = syncSheetDateToYyyyMmDd_(data[i][4]);
+      const sheetTimeNorm = normalizeTimeToken_(formatSheetTimeForEmail(data[i][5]));
+      const calStart = event.getStartTime();
+      const calDateYmd = Utilities.formatDate(calStart, tz, 'yyyy-MM-dd');
+      const calTimeNorm = normalizeTimeToken_(Utilities.formatDate(calStart, tz, 'h:mm a'));
+      if (calDateYmd !== sheetDateYmd || calTimeNorm !== sheetTimeNorm) {
+        const calTimeDisplay = Utilities.formatDate(calStart, tz, 'h:mm a');
+        sheet.getRange(i + 1, 5).setValue(calStart);
+        sheet.getRange(i + 1, 6).setValue(calTimeDisplay);
+        sheet.getRange(i + 1, 11).setValue('');
+        SpreadsheetApp.flush();
+        const neatDate = Utilities.formatDate(calStart, tz, 'EEEE, MMMM d, yyyy');
+        const clientEmail = data[i][6];
+        const service = data[i][3];
+        if (clientEmail) {
+          const html = getCalendarUpdatedClientEmailHtml(data[i][1], neatDate, calTimeDisplay, service);
+          MailApp.sendEmail({
+            to: clientEmail,
+            name: "Roni's Nail Studio",
+            subject: "Appointment time updated — Roni's Nail Studio",
+            htmlBody: html,
+          });
+        }
       }
     }
   }
+}
+
+/**
+ * One-time setup: creates a time-driven trigger to run syncCalendarToSpreadsheet every 10 minutes.
+ * Apps Script editor → select installCalendarSyncTrigger → Run. (Skip if trigger already listed under Triggers.)
+ */
+function installCalendarSyncTrigger() {
+  const fn = 'syncCalendarToSpreadsheet';
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === fn) {
+      Logger.log('Trigger already exists for ' + fn);
+      return;
+    }
+  }
+  ScriptApp.newTrigger(fn).timeBased().everyMinutes(10).create();
+  Logger.log('Installed time trigger: ' + fn + ' every 10 minutes');
 }
 
 function tokenMatches(stored, provided) {
@@ -447,6 +514,26 @@ function getRescheduledClientEmailHtml(name, date, time, service) {
     rows +
     '</tbody></table>' +
     '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">We look forward to seeing you.</p>' +
+    '<hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">' +
+    '<p style="font-size: 13px; color: #999; text-align: center;">Roni\'s Nail Studio</p>' +
+    '</div>'
+  );
+}
+
+/** Client email when you move the event in Google Calendar (syncCalendarToSpreadsheet). */
+function getCalendarUpdatedClientEmailHtml(name, date, time, service) {
+  const n = escapeHtml(name);
+  const rows = emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service);
+  return (
+    '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ' +
+    n +
+    ',</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Your appointment time has been <strong>updated</strong>. Here are your current details:</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 24px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
+    rows +
+    '</tbody></table>' +
+    '<p style="font-size: 15px; color: #555; line-height: 1.6;">If this doesn\'t work for you, reply to this email or use the reschedule link in your reminder when you receive it.</p>' +
     '<hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">' +
     '<p style="font-size: 13px; color: #999; text-align: center;">Roni\'s Nail Studio</p>' +
     '</div>'
