@@ -1129,7 +1129,20 @@ function handleReschedulePost(d) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Admin page: search Bookings by client name (substring). Dedupes by email (or phone). */
+/** Stable keys so +1 vs 10-digit phone and email both dedupe the same person. */
+function ownerLookupDedupeKeys_(email, phone) {
+  const keys = [];
+  const em = String(email == null ? '' : email)
+    .trim()
+    .toLowerCase();
+  if (em && em.indexOf('@') > 0) keys.push('e:' + em);
+  let dig = String(phone == null ? '' : phone).replace(/\D/g, '');
+  if (dig.length === 11 && dig.charAt(0) === '1') dig = dig.slice(1);
+  if (dig.length >= 10) keys.push('p:' + dig.slice(-10));
+  return keys;
+}
+
+/** Admin page: search Bookings by client name (substring). Dedupes by email and/or normalized phone. */
 function handleOwnerClientLookup(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
   if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
@@ -1153,14 +1166,18 @@ function handleOwnerClientLookup(d) {
     const ts = data[i][0];
     if (name == null || String(name).trim() === '') continue;
     if (String(name).toLowerCase().indexOf(q) < 0) continue;
-    const em = String(email == null ? '' : email)
-      .trim()
-      .toLowerCase();
     const ph = String(phone == null ? '' : phone).trim();
-    const key = em || 'p:' + ph;
-    if (key === 'p:' || key === '') continue;
-    if (seen[key]) continue;
-    seen[key] = true;
+    const keys = ownerLookupDedupeKeys_(email, phone);
+    if (keys.length === 0) continue;
+    let duplicate = false;
+    for (let k = 0; k < keys.length; k++) {
+      if (seen[keys[k]]) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) continue;
+    for (let k = 0; k < keys.length; k++) seen[keys[k]] = true;
     let lastBooked = '';
     if (ts instanceof Date && !isNaN(ts.getTime())) {
       lastBooked = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'MMM d, yyyy');

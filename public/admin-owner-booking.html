@@ -39,6 +39,28 @@
         .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
         .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
         .lookup-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.5rem; margin-bottom: 0.75rem; }
+        .lookup-status {
+            display: none;
+            align-items: center;
+            gap: 0.55rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin: 0.25rem 0 0.65rem;
+            min-height: 1.5rem;
+        }
+        .lookup-status.visible { display: flex; }
+        .lookup-status .spinner-mini {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            border: 2px solid rgba(178, 115, 154, 0.25);
+            border-top-color: var(--text-accent);
+            border-radius: 50%;
+            animation: owner-admin-spin 0.65s linear infinite;
+        }
+        @keyframes owner-admin-spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -66,8 +88,9 @@
             </div>
             <div class="lookup-block">
                 <label for="lookup-name">Find in CRM (type name)</label>
-                <input type="text" id="lookup-name" autocomplete="off" placeholder="e.g. Sarah">
+                <input type="text" id="lookup-name" autocomplete="off" placeholder="e.g. Sarah" aria-autocomplete="list" aria-controls="match-list">
                 <p class="lookup-hint">Matches names in your Bookings sheet. Pick a row to fill contact fields. New clients: skip and type everything below.</p>
+                <div id="lookup-status" class="lookup-status" role="status" aria-live="polite"></div>
                 <ul id="match-list" class="match-list" aria-live="polite"></ul>
             </div>
             <label for="client-name">Client name</label>
@@ -131,12 +154,45 @@
                 msg.textContent = text;
             }
 
+            function escapeHtml(s) {
+                var d = document.createElement('div');
+                d.textContent = s == null ? '' : String(s);
+                return d.innerHTML;
+            }
+
             var lookupTimer = null;
+            var lookupReqId = 0;
+            var lookupStatus = document.getElementById('lookup-status');
+
+            /** @param {{ noSpinner?: boolean }} [opts] */
+            function setLookupLoading(on, text, opts) {
+                opts = opts || {};
+                if (!lookupStatus) return;
+                if (on) {
+                    lookupStatus.classList.add('visible');
+                    if (opts.noSpinner) {
+                        lookupStatus.innerHTML = '<span>' + escapeHtml(text || '') + '</span>';
+                    } else {
+                        lookupStatus.innerHTML =
+                            '<span class="spinner-mini" aria-hidden="true"></span><span>' + escapeHtml(text || 'Searching…') + '</span>';
+                    }
+                } else {
+                    lookupStatus.classList.remove('visible');
+                    lookupStatus.innerHTML = '';
+                }
+            }
+
             function runLookup() {
                 var secret = secretInput.value.trim();
                 var q = lookupName.value.trim();
                 matchList.innerHTML = '';
-                if (!secret || q.length < 2) return;
+                if (!secret || q.length < 2) {
+                    setLookupLoading(false);
+                    return;
+                }
+
+                var reqId = ++lookupReqId;
+                setLookupLoading(true, 'Searching…');
 
                 fetch(PROXY, {
                     method: 'POST',
@@ -151,6 +207,8 @@
                         return r.json();
                     })
                     .then(function (data) {
+                        if (reqId !== lookupReqId) return;
+                        matchList.innerHTML = '';
                         if (!data || data.status !== 'success') {
                             if (data && data.message === 'unauthorized') setMsg(false, 'Wrong admin secret.');
                             return;
@@ -160,7 +218,16 @@
                                 localStorage.setItem(STORAGE_KEY, secretInput.value.trim());
                             }
                         } catch (e) { /* ignore */ }
-                        (data.matches || []).forEach(function (m) {
+                        var list = data.matches || [];
+                        if (list.length === 0) {
+                            setLookupLoading(true, 'No matches in Bookings for that search.', { noSpinner: true });
+                            setTimeout(function () {
+                                if (reqId === lookupReqId) setLookupLoading(false);
+                            }, 1200);
+                            return;
+                        }
+                        setLookupLoading(false);
+                        list.forEach(function (m) {
                             var li = document.createElement('li');
                             var btn = document.createElement('button');
                             btn.type = 'button';
@@ -178,19 +245,24 @@
                                 clientEmail.value = m.email || '';
                                 matchList.innerHTML = '';
                                 lookupName.value = '';
+                                setLookupLoading(false);
                                 clearMsg();
                             });
                             li.appendChild(btn);
                             matchList.appendChild(li);
                         });
                     })
-                    .catch(function () { /* silent */ });
-            }
-
-            function escapeHtml(s) {
-                var d = document.createElement('div');
-                d.textContent = s == null ? '' : String(s);
-                return d.innerHTML;
+                    .catch(function () {
+                        if (reqId !== lookupReqId) return;
+                        matchList.innerHTML = '';
+                    })
+                    .finally(function () {
+                        if (reqId === lookupReqId) {
+                            if (lookupStatus && lookupStatus.textContent.indexOf('Searching') >= 0) {
+                                setLookupLoading(false);
+                            }
+                        }
+                    });
             }
 
             lookupName.addEventListener('input', function () {
@@ -198,7 +270,10 @@
                 if (lookupTimer) clearTimeout(lookupTimer);
                 matchList.innerHTML = '';
                 var q = lookupName.value.trim();
-                if (q.length < 2) return;
+                if (q.length < 2) {
+                    setLookupLoading(false);
+                    return;
+                }
                 lookupTimer = setTimeout(runLookup, 400);
             });
 
