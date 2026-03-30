@@ -1,3 +1,8 @@
+html {
+    overflow-x: hidden;
+    max-width: 100%;
+}
+
 :root {
     /* Luxury Pastel Lilac Palette */
     --bg-overlay: rgba(246, 235, 250, 0.2); /* Very sheer wash to reveal background */
@@ -21,6 +26,8 @@ body {
     color: var(--text-main);
     min-height: 100vh;
     overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
     line-height: 1.6;
     position: relative;
     background: #fdf5f9; /* Fallback */
@@ -140,6 +147,10 @@ body {
     margin-bottom: 0;
     border-bottom: 1px solid rgba(178, 115, 154, 0.4);
     padding-bottom: 1.5rem;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
 }
 
 h1 {
@@ -150,6 +161,9 @@ h1 {
     letter-spacing: 6px;
     color: var(--text-main);
     line-height: 1.1;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
 }
 
 .container {
@@ -531,10 +545,11 @@ hr {
 /* Ultra Minimal Modal Styling */
 .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
     background: rgba(246, 235, 250, 0.85); /* Matches background theme */
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
@@ -784,6 +799,15 @@ hr {
         gap: 2rem;
         padding: 2.5rem 1.5rem;
     }
+}
+
+/* Native date/time controls can use a large intrinsic width on mobile Safari */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 

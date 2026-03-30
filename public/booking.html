@@ -10,10 +10,24 @@
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
+        body.page-booking .hero {
+            max-width: 100%;
+            overflow-x: hidden;
+            box-sizing: border-box;
+            padding-left: max(1rem, env(safe-area-inset-left, 0px));
+            padding-right: max(1rem, env(safe-area-inset-right, 0px));
+        }
+
         .booking-page {
-            max-width: 700px;
+            max-width: min(700px, 100%);
+            width: 100%;
             margin: 0 auto;
-            padding: 0 2rem calc(4rem + env(safe-area-inset-bottom, 0px)) 2rem;
+            padding-top: 0;
+            padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+            padding-left: calc(1.5rem + env(safe-area-inset-left, 0px));
+            padding-right: calc(1.5rem + env(safe-area-inset-right, 0px));
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
 
         .back-link {
@@ -38,6 +52,7 @@
             flex-wrap: wrap;
             gap: 0.75rem;
             margin-bottom: 0.5rem;
+            max-width: 100%;
         }
 
         .service-tag {
@@ -53,7 +68,12 @@
         }
 
         /* Calendar */
-        .calendar-section { margin-bottom: 2.5rem; position: relative; }
+        .calendar-section {
+            margin-bottom: 2.5rem;
+            position: relative;
+            overflow-x: hidden;
+            max-width: 100%;
+        }
         .calendar-loading-panel {
             margin-bottom: 0.5rem;
         }
@@ -71,6 +91,7 @@
         }
         .cal-skeleton-block {
             height: 220px;
+            max-width: 100%;
             border-radius: 12px;
             background: linear-gradient(
                 110deg,
@@ -95,21 +116,30 @@
             border-radius: 32px;
             padding: 3.5rem 3rem;
             box-shadow: 0 15px 40px rgba(119, 78, 120, 0.05);
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
         }
         .cal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 0.35rem;
             margin-bottom: 1.5rem;
+            min-width: 0;
         }
 
         .cal-header h3 {
             font-family: var(--font-heading);
-            font-size: 1.1rem;
+            font-size: clamp(0.78rem, 3.5vw, 1.1rem);
             font-weight: 400;
             text-transform: uppercase;
             letter-spacing: 2px;
             color: var(--text-main);
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+            line-height: 1.25;
         }
 
         .cal-nav {
@@ -118,6 +148,7 @@
             border-radius: 50%;
             width: 36px;
             height: 36px;
+            flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -134,9 +165,11 @@
 
         .cal-grid {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
+            grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 4px;
             text-align: center;
+            max-width: 100%;
+            min-width: 0;
         }
 
         .cal-day-label {
@@ -166,9 +199,15 @@
             font-weight: 500;
             background: rgba(255, 255, 255, 0.4);
         }
-        .cal-day.available:hover {
-            background: rgba(178, 115, 154, 0.15);
-            transform: scale(1.05);
+        /* scale() on hover overflows the grid on narrow phones and enables horizontal pan */
+        @media (hover: hover) and (pointer: fine) {
+            .cal-day.available:hover {
+                background: rgba(178, 115, 154, 0.15);
+                transform: scale(1.05);
+            }
+        }
+        .cal-day.available:active {
+            background: rgba(178, 115, 154, 0.2);
         }
 
         .cal-day.selected {
@@ -256,10 +295,12 @@
             gap: 0.75rem;
         }
         /* Customer Form */
-        .customer-form { margin-top: 1rem; }
+        .customer-form { margin-top: 1rem; max-width: 100%; min-width: 0; }
 
         .form-field {
             margin-bottom: 1.25rem;
+            max-width: 100%;
+            min-width: 0;
         }
 
         .form-field label {
@@ -275,6 +316,8 @@
 
         .form-field input {
             width: 100%;
+            max-width: 100%;
+            min-width: 0;
             padding: 0.85rem 1rem;
             border: 1px solid rgba(178, 115, 154, 0.15);
             border-radius: 10px;
@@ -284,6 +327,7 @@
             font-size: max(16px, 0.95rem);
             color: var(--text-main);
             transition: all 0.3s;
+            box-sizing: border-box;
         }
         .form-field input:focus {
             outline: none;
@@ -355,7 +399,9 @@
             color: var(--text-main);
             margin-top: 1.5rem;
             display: flex;
-            gap: 2rem;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.5rem;
+            max-width: 100%;
             border-top: 1px solid var(--border-line);
             padding-top: 1rem;
         }
@@ -364,7 +410,11 @@
 
         @media (max-width: 600px) {
             html { font-size: 15px; }
-            .booking-page { padding: 0 1.25rem 3rem 1.25rem; }
+            .booking-page {
+                padding-left: calc(1.1rem + env(safe-area-inset-left, 0px));
+                padding-right: calc(1.1rem + env(safe-area-inset-right, 0px));
+                padding-bottom: calc(3rem + env(safe-area-inset-bottom, 0px));
+            }
             .form-section { padding: 2.25rem 1.5rem !important; }
             .cal-day { font-size: 0.8rem; padding: 0.5rem 0; }
             .slot-pill { padding: 0.5rem 1rem; font-size: 0.8rem; }

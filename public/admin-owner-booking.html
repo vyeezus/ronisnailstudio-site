@@ -78,7 +78,17 @@
         .admin-nav a:hover { text-decoration: underline; }
         .admin-book-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
         .admin-book-page input[type="password"], .admin-book-page input[type="text"], .admin-book-page input[type="email"], .admin-book-page input[type="tel"], .admin-book-page input[type="date"], .admin-book-page input[type="number"], .admin-book-page textarea {
-            width: 100%; padding: 0.75rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 0.9rem; box-sizing: border-box;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            padding: 0.75rem 1rem;
+            border: 1px solid rgba(178, 115, 154, 0.2);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.55);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            margin-bottom: 0.9rem;
+            box-sizing: border-box;
         }
         .admin-book-page textarea { min-height: 4rem; resize: vertical; }
         .admin-book-page input:focus, .admin-book-page textarea:focus { outline: none; border-color: var(--text-accent); }
