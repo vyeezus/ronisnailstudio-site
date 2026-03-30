@@ -12,6 +12,7 @@
             max-width: 700px;
             margin: 0 auto;
             padding: 0 2rem 4rem 2rem;
+            overflow-anchor: none;
         }
 
         .back-link {
@@ -240,7 +241,8 @@
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.5);
             font-family: var(--font-body);
-            font-size: 0.95rem;
+            /* 16px minimum: iOS Safari stops auto-zoom on focus; avoids “zoomed in” success view */
+            font-size: max(16px, 0.95rem);
             color: var(--text-main);
             transition: all 0.3s;
         }
@@ -255,9 +257,19 @@
         }
 
         /* Success / Error states */
+        .cal-day.available,
+        .cal-nav,
+        .slot-pill:not(:disabled),
+        #confirm-btn {
+            touch-action: manipulation;
+        }
+
         .booking-success {
             text-align: center;
             padding: 3rem 2rem;
+            /* After iOS zoom, avoid inherited scale feeling “stuck” */
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
         }
         .booking-success .check-circle {
             width: 60px;
@@ -397,6 +409,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=work_hours_v2"></script>
+    <script src="booking-v3.js?v=mobile_booking_v1"></script>
 </body>
 </html>

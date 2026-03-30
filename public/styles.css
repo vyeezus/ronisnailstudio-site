@@ -42,6 +42,13 @@ body {
     z-index: -2;
 }
 
+/* iOS Safari: fixed + background-attachment:fixed causes scroll jump / rubber-band glitches */
+@media (max-width: 768px) {
+    .background-texture {
+        background-attachment: scroll;
+    }
+}
+
 /* The lush pastel wash over the texture */
 .background-overlay {
     position: fixed;

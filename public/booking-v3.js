@@ -294,6 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCalendar() {
+        const scrollY = window.scrollY;
         calGrid.innerHTML = '';
         monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
         DAYS.forEach(d => {
@@ -337,6 +338,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             calGrid.appendChild(btn);
         }
+        requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY);
+        });
     }
 
     function formatDate(d) {
@@ -434,7 +438,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function showCustomerSection() {
         document.getElementById('slot-preview').innerHTML = `Selected: <strong>${slotsDateLabel.textContent} @ ${selectedSlot}</strong>`;
         customerSection.style.display = 'block';
-        customerSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+        customerSection.scrollIntoView({
+            behavior: coarse ? 'instant' : 'smooth',
+            block: 'nearest',
+        });
         updateConfirmBtn();
     }
 
@@ -503,6 +511,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     successMessage.style.display = 'block';
                 }
             }
+            const ae = document.activeElement;
+            if (ae && typeof ae.blur === 'function') ae.blur();
+            requestAnimationFrame(() => {
+                if (successBlock) {
+                    successBlock.scrollIntoView({ block: 'start', behavior: 'instant' });
+                }
+            });
         } catch (err) {
             bookError.innerHTML = '<div class="booking-error">Submission failed. Please try again.</div>';
             confirmBtn.innerHTML = originalBtnText;
