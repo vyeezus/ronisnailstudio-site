@@ -15,11 +15,65 @@
         .admin-hours-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
         .admin-hours-page input[type="password"], .admin-hours-page input[type="text"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 0.75rem; box-sizing: border-box; }
         .admin-hours-page input:focus { outline: none; border-color: var(--text-accent); }
-        .day-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem 0.75rem; align-items: center; margin-bottom: 0.65rem; padding: 0.65rem 0; border-bottom: 1px solid rgba(178, 115, 154, 0.12); }
-        .day-row .day-name { font-family: var(--font-body); font-size: 0.95rem; color: var(--text-main); }
-        .day-row input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--text-accent); }
-        .day-row select { padding: 0.45rem 0.5rem; border-radius: 8px; border: 1px solid rgba(178, 115, 154, 0.2); font-family: var(--font-body); font-size: 0.9rem; background: rgba(255,255,255,0.7); }
-        .day-row .open-label { font-size: 0.75rem; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 500; }
+        .day-row { 
+            display: grid; 
+            grid-template-columns: 100px 1fr auto; 
+            gap: 1rem; 
+            align-items: center; 
+            margin-bottom: 0; 
+            padding: 1.25rem 0.5rem; 
+            border-bottom: 1px solid rgba(178, 115, 154, 0.1); 
+            transition: background 0.2s;
+        }
+        .day-row:hover { background: rgba(255, 255, 255, 0.2); }
+        .day-row .day-name { 
+            font-family: var(--font-heading); 
+            font-size: 0.9rem; 
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-main); 
+        }
+        .day-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+        .day-row input[type="checkbox"] { 
+            width: 1.2rem; 
+            height: 1.2rem; 
+            accent-color: var(--text-accent); 
+            cursor: pointer;
+        }
+        .day-row select { 
+            padding: 0.5rem 0.75rem; 
+            border-radius: 12px; 
+            border: 1px solid rgba(178, 115, 154, 0.15); 
+            font-family: var(--font-body); 
+            font-size: 0.85rem; 
+            background: #fff; 
+            color: var(--text-main);
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23b2739a' d='M0 3l5 5 5-5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            padding-right: 1.75rem;
+        }
+        .day-row .open-label { 
+            font-size: 0.8rem; 
+            color: var(--text-muted); 
+            text-transform: none; 
+            letter-spacing: 0; 
+            font-weight: 500; 
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+        }
+        .day-row .time-sep { color: var(--text-muted); font-size: 0.8rem; opacity: 0.5; }
         .secret-block { margin-bottom: 1.5rem; }
         .btn-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; }
         .admin-hours-page .cute-btn { flex: 1; min-width: 140px; border: none; cursor: pointer; font-family: var(--font-body); }
@@ -31,8 +85,22 @@
         .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
         .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
         @media (max-width: 520px) {
-            .day-row { grid-template-columns: 1fr 1fr; }
-            .day-row .day-name { grid-column: 1 / -1; }
+            .day-row { 
+                grid-template-columns: 1fr; 
+                gap: 0.75rem;
+                padding: 1.5rem 1rem;
+            }
+            .day-controls {
+                justify-content: flex-start;
+                background: rgba(255, 255, 255, 0.3);
+                padding: 0.75rem;
+                border-radius: 16px;
+                border: 1px solid rgba(178, 115, 154, 0.05);
+            }
+            .day-row select {
+                flex: 1;
+                min-width: 0;
+            }
         }
     </style>
 </head>
@@ -104,9 +172,12 @@
                 row.className = 'day-row';
                 row.innerHTML =
                     '<span class="day-name">' + DAY_NAMES[d] + '</span>' +
-                    '<label class="open-label"><input type="checkbox" id="open-' + d + '"> Open</label>' +
-                    '<select id="start-' + d + '" aria-label="Start ' + DAY_NAMES[d] + '">' + hourOptions(9) + '</select>' +
-                    '<select id="end-' + d + '" aria-label="End ' + DAY_NAMES[d] + '">' + endHourOptions(17) + '</select>';
+                    '<div class="day-controls">' +
+                        '<label class="open-label"><input type="checkbox" id="open-' + d + '"> Open</label>' +
+                        '<select id="start-' + d + '" aria-label="Start ' + DAY_NAMES[d] + '">' + hourOptions(9) + '</select>' +
+                        '<span class="time-sep">to</span>' +
+                        '<select id="end-' + d + '" aria-label="End ' + DAY_NAMES[d] + '">' + endHourOptions(17) + '</select>' +
+                    '</div>';
                 wrap.appendChild(row);
             }
 
