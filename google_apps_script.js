@@ -433,8 +433,67 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
 }
 
 /**
- * --- TEST FUNCTION (PREVIEW EMAILS) ---
- * Run this in the Google Script Editor to see both templates instantly!
+ * --- TEST / PREVIEW EMAILS ---
+ * In Apps Script: select the function → Run. Authorize MailApp if prompted.
+ */
+
+/**
+ * Layout only: Confirm / Cancel / Reschedule links use fake IDs (clicks will show invalid/not found).
+ */
+function testTwoDayReminderPreview() {
+  const html = getTwoDayReminderEmailHtml(
+    'Vy (Preview)',
+    'Monday, April 7, 2026',
+    '2:00 PM',
+    'Gel Manicure',
+    'PREVIEW_NO_REAL_EVENT',
+    'preview_invalid_token'
+  );
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: "PREVIEW: 2-day reminder (links are dummy — safe to click)",
+    htmlBody:
+      '<p style="font-family:sans-serif;font-size:13px;color:#666;">Dummy links only. Use <strong>testTwoDayReminderLiveToStudio</strong> to test working buttons on a real booking.</p>' +
+      html,
+  });
+  Logger.log('Sent 2-day reminder PREVIEW to ' + MY_EMAIL);
+}
+
+/**
+ * Sends the real 2-day reminder email to MY_EMAIL only, using the latest CONFIRMED row
+ * that has eventId + token. Links work like production. WARNING: Cancel removes the calendar event
+ * and sets the row to CANCELLED; Confirm sets CLIENT_CONFIRMED. Does not set reminder column K.
+ */
+function testTwoDayReminderLiveToStudio() {
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][7] !== 'CONFIRMED') continue;
+    const eventId = data[i][8];
+    const tok = data[i][9];
+    if (!eventId || !tok) continue;
+    const clientName = data[i][1];
+    const service = data[i][3];
+    const neatD = formatSheetDateForEmail(data[i][4]);
+    const neatTime = formatSheetTimeForEmail(data[i][5]);
+    const html = getTwoDayReminderEmailHtml(clientName, neatD, neatTime, service, eventId, tok);
+    MailApp.sendEmail({
+      to: MY_EMAIL,
+      name: "Roni's Nail Studio",
+      subject: 'TEST (live links): 2-day reminder — ' + clientName + ' — Cancel will cancel for real',
+      htmlBody:
+        '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;"><strong>Test email.</strong> Sent to studio only. Buttons use real booking data — <strong>Cancel</strong> will cancel this appointment.</p>' +
+        html,
+    });
+    Logger.log('Sent LIVE test 2-day reminder for sheet row ' + (i + 1) + ' to ' + MY_EMAIL);
+    return;
+  }
+  throw new Error('No CONFIRMED row with eventId and token. Approve a booking first.');
+}
+
+/**
+ * Run in the editor: request + confirmed + 2-day preview (dummy links for 2-day).
  */
 function testEmailPreview() {
   const mockName = "Vy Nguyen (Test)";
@@ -443,16 +502,21 @@ function testEmailPreview() {
   const mockTime = "11:30 AM";
   const mockPhone = "555-0199";
   const mockEmail = "test@example.com";
-  
-  // 1. Send Request Preview (Owner View)
+
   const reqHtml = getRequestEmailHtml(mockName, mockService, mockPhone, mockEmail, mockDate, mockTime, "test_event_id", "preview_only_invalid_token");
   MailApp.sendEmail({ to: MY_EMAIL, subject: "PREVIEW: New Booking Request", htmlBody: reqHtml });
-  
-  // 2. Send Confirmed Preview (Client View)
+
   const confHtml = getConfirmedEmailHtml(mockName, mockDate, mockTime, mockService);
   MailApp.sendEmail({ to: MY_EMAIL, subject: "PREVIEW: Appointment Confirmed", htmlBody: confHtml });
-  
-  Logger.log("Sent 2 preview emails to: " + MY_EMAIL);
+
+  const twoDayHtml = getTwoDayReminderEmailHtml(mockName, mockDate, mockTime, mockService, "PREVIEW_NO_REAL_EVENT", "preview_invalid_token");
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: "PREVIEW: 2-day reminder (dummy links)",
+    htmlBody: twoDayHtml,
+  });
+
+  Logger.log("Sent 3 preview emails to: " + MY_EMAIL);
 }
 
 function convertTo24Hour(timeStr) {
