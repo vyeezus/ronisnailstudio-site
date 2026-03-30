@@ -162,7 +162,6 @@ document.addEventListener('DOMContentLoaded', () => {
             window[callbackName] = function (data) {
                 cleanup();
                 busyTimes = Array.isArray(data) ? data : [];
-                renderCalendar();
                 resolve();
             };
 
@@ -230,7 +229,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e2) {
                 console.error('Calendar JSONP failed entirely.', e2);
                 busyTimes = [];
-                renderCalendar();
             }
         }
     }
@@ -294,7 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCalendar() {
-        const scrollY = window.scrollY;
         calGrid.innerHTML = '';
         monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
         DAYS.forEach(d => {
@@ -338,9 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             calGrid.appendChild(btn);
         }
-        requestAnimationFrame(() => {
-            window.scrollTo(0, scrollY);
-        });
     }
 
     function formatDate(d) {
@@ -552,8 +546,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 backLink.textContent = 'Back to home';
                 backLink.href = 'index.html';
             }
-            monthLabel.textContent = 'Loading…';
-
             let meta;
             try {
                 meta = await loadRescheduleMetaJsonp(SCRIPT_PROXY, rescheduleEventId, rescheduleToken);
@@ -592,7 +584,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         populateServiceTags(serviceNames);
 
-        await loadWorkHours();
+        monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
+
+        const loadingEl = document.getElementById('calendar-loading');
 
         if (priceStr && timeStr && !isReschedule) {
             const summaryInfo = document.createElement('div');
@@ -604,7 +598,12 @@ document.addEventListener('DOMContentLoaded', () => {
             tagsContainer.after(summaryInfo);
         }
 
-        await fetchBusyTimes(ignoreEventId);
+        try {
+            await Promise.all([loadWorkHours(), fetchBusyTimes(ignoreEventId)]);
+        } finally {
+            renderCalendar();
+            if (loadingEl) loadingEl.hidden = true;
+        }
     }
 
     initBooking().catch(() => {
