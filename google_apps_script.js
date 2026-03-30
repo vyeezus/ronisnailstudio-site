@@ -186,6 +186,24 @@ function installCalendarSyncTrigger() {
   Logger.log('Installed time trigger: ' + fn + ' every 10 minutes');
 }
 
+/**
+ * One-time setup: daily trigger for sendTwoDayReminders (Confirm / Reschedule / Cancel email).
+ * Runs at 8:00 AM in the project time zone (File → Project settings → Time zone).
+ * Apps Script editor → select installTwoDayReminderTrigger → Run.
+ */
+function installTwoDayReminderTrigger() {
+  const fn = 'sendTwoDayReminders';
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === fn) {
+      Logger.log('Trigger already exists for ' + fn);
+      return;
+    }
+  }
+  ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(8).create();
+  Logger.log('Installed daily trigger: ' + fn + ' at 8:00 AM (project time zone)');
+}
+
 function tokenMatches(stored, provided) {
   if (stored === undefined || stored === null || provided === undefined || provided === null) return false;
   return String(stored).trim() === String(provided).trim();
@@ -592,7 +610,7 @@ function getTwoDayReminderEmailHtml(name, date, time, service, eventId, token) {
 
 /**
  * Sends the 2-day reminder once per booking (column K = SENT).
- * In Apps Script: Triggers → Add trigger → choose this function → time-driven → daily.
+ * Schedule: run installTwoDayReminderTrigger() once, or Triggers → Add trigger → time-driven → daily.
  */
 function sendTwoDayReminders() {
   const ss = getCRMSpreadsheet();
