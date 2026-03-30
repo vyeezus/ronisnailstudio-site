@@ -127,7 +127,7 @@
                 <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
                 <label class="remember">
                     <input type="checkbox" id="remember-secret">
-                    Remember on this device (session only)
+                    Remember on this browser (stays after closing — uncheck to clear)
                 </label>
             </div>
             <div id="days-wrap"></div>
@@ -142,7 +142,7 @@
             var PROXY = window.location.origin + '/api/booking';
             var DIRECT = 'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
             var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            var STORAGE_KEY = 'booking_admin_secret_session';
+            var STORAGE_KEY = 'booking_admin_secret';
 
             var msg = document.getElementById('msg');
             var secretInput = document.getElementById('admin-secret');
@@ -186,7 +186,7 @@
             }
 
             try {
-                var stored = sessionStorage.getItem(STORAGE_KEY);
+                var stored = localStorage.getItem(STORAGE_KEY);
                 if (stored) {
                     secretInput.value = stored;
                     rememberCb.checked = true;
@@ -195,7 +195,7 @@
 
             rememberCb.addEventListener('change', function () {
                 try {
-                    if (!rememberCb.checked) sessionStorage.removeItem(STORAGE_KEY);
+                    if (!rememberCb.checked) localStorage.removeItem(STORAGE_KEY);
                 } catch (e) { /* ignore */ }
             });
 
@@ -305,8 +305,8 @@
                     return;
                 }
                 try {
-                    if (rememberCb.checked) sessionStorage.setItem(STORAGE_KEY, secret);
-                    else sessionStorage.removeItem(STORAGE_KEY);
+                    if (rememberCb.checked) localStorage.setItem(STORAGE_KEY, secret);
+                    else localStorage.removeItem(STORAGE_KEY);
                 } catch (e) { /* ignore */ }
 
                 btnSave.disabled = true;

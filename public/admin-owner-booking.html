@@ -61,7 +61,7 @@
                 <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
                 <label class="remember">
                     <input type="checkbox" id="remember-secret">
-                    Remember on this device (session only)
+                    Remember on this browser (stays after closing — uncheck to clear)
                 </label>
             </div>
             <div class="lookup-block">
@@ -92,7 +92,7 @@
     <script>
         (function () {
             var PROXY = window.location.origin + '/api/booking';
-            var STORAGE_KEY = 'booking_admin_secret_session';
+            var STORAGE_KEY = 'booking_admin_secret';
 
             var msg = document.getElementById('msg');
             var secretInput = document.getElementById('admin-secret');
@@ -109,9 +109,18 @@
             var btnSubmit = document.getElementById('btn-submit');
 
             try {
-                var saved = sessionStorage.getItem(STORAGE_KEY);
-                if (saved) secretInput.value = saved;
+                var saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    secretInput.value = saved;
+                    rememberCb.checked = true;
+                }
             } catch (e) { /* ignore */ }
+
+            rememberCb.addEventListener('change', function () {
+                try {
+                    if (!rememberCb.checked) localStorage.removeItem(STORAGE_KEY);
+                } catch (e) { /* ignore */ }
+            });
 
             function clearMsg() {
                 msg.className = 'msg';
@@ -146,6 +155,11 @@
                             if (data && data.message === 'unauthorized') setMsg(false, 'Wrong admin secret.');
                             return;
                         }
+                        try {
+                            if (rememberCb.checked && secretInput.value.trim()) {
+                                localStorage.setItem(STORAGE_KEY, secretInput.value.trim());
+                            }
+                        } catch (e) { /* ignore */ }
                         (data.matches || []).forEach(function (m) {
                             var li = document.createElement('li');
                             var btn = document.createElement('button');
@@ -209,8 +223,8 @@
                 if (isNaN(dur) || dur < 15) dur = 60;
 
                 try {
-                    if (rememberCb.checked) sessionStorage.setItem(STORAGE_KEY, secret);
-                    else sessionStorage.removeItem(STORAGE_KEY);
+                    if (rememberCb.checked) localStorage.setItem(STORAGE_KEY, secret);
+                    else localStorage.removeItem(STORAGE_KEY);
                 } catch (e) { /* ignore */ }
 
                 btnSubmit.disabled = true;
