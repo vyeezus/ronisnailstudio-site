@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suggest a different time | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .owner-mod-page { max-width: 480px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .owner-mod-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; color: var(--text-main); text-align: center; }
+        .owner-mod-page .sub { font-size: 0.9rem; color: var(--text-muted); text-align: center; margin-bottom: 2rem; line-height: 1.6; }
+        .owner-mod-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.45rem; }
+        .owner-mod-page input { width: 100%; padding: 0.85rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 1.25rem; }
+        .owner-mod-page input:focus { outline: none; border-color: var(--text-accent); }
+        .owner-mod-page .hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.75rem; margin-bottom: 1.25rem; }
+        .owner-mod-page .cute-btn { width: 100%; border: none; cursor: pointer; font-family: var(--font-body); }
+        .owner-mod-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+        .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
+        .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+    <main class="container">
+        <div class="form-section owner-mod-page">
+            <h1>Suggest a different time</h1>
+            <p class="sub">Enter the date and time you’d like to offer. The client will get an email to accept or decline. The calendar stays on their original request until they confirm.</p>
+            <div id="msg" class="msg" role="status"></div>
+            <form id="mod-form">
+                <label for="prop-date">Proposed date</label>
+                <input type="date" id="prop-date" required>
+                <label for="prop-time">Proposed start time</label>
+                <input type="text" id="prop-time" placeholder="2:30 PM" required autocomplete="off">
+                <p class="hint">Use the same style as the booking site (e.g. 2:30 PM or 9:00 AM).</p>
+                <button type="submit" class="cute-btn" id="submit-btn">Send to client</button>
+            </form>
+        </div>
+    </main>
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var eventId = params.get('eventId');
+            var token = params.get('token');
+            var msg = document.getElementById('msg');
+            var form = document.getElementById('mod-form');
+            var btn = document.getElementById('submit-btn');
+
+            if (!eventId || !token) {
+                form.style.display = 'none';
+                msg.className = 'msg err';
+                msg.textContent = 'This page needs a valid link from your booking request email.';
+                msg.style.display = 'block';
+                return;
+            }
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                msg.className = 'msg';
+                msg.textContent = '';
+                msg.style.display = 'none';
+                var dateVal = document.getElementById('prop-date').value;
+                var timeVal = document.getElementById('prop-time').value.trim();
+                if (!dateVal || !timeVal) return;
+
+                btn.disabled = true;
+                var proxy = window.location.origin + '/api/booking';
+                fetch(proxy, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ownerProposeAlternate: true,
+                        eventId: eventId,
+                        ownerToken: token,
+                        proposedDate: dateVal,
+                        proposedTime: timeVal
+                    })
+                })
+                    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+                    .then(function (x) {
+                        if (x.ok && x.j.status === 'success') {
+                            form.style.display = 'none';
+                            msg.className = 'msg ok';
+                            msg.textContent = 'Done. The client was emailed. You’ll get a copy at the studio inbox. You can close this tab.';
+                            msg.style.display = 'block';
+                        } else {
+                            var m = x.j.message || 'Something went wrong.';
+                            if (m === 'already_proposed') m = 'You already sent an alternate time for this request. Wait for the client or decline the request from your email.';
+                            if (m === 'not_pending') m = 'This request is no longer pending.';
+                            if (m === 'invalid_token') m = 'Link expired or invalid. Open the latest booking email from your inbox.';
+                            msg.className = 'msg err';
+                            msg.textContent = m;
+                            msg.style.display = 'block';
+                            btn.disabled = false;
+                        }
+                    })
+                    .catch(function () {
+                        msg.className = 'msg err';
+                        msg.textContent = 'Could not reach the server. Try again or use the Apps Script URL directly.';
+                        msg.style.display = 'block';
+                        btn.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>

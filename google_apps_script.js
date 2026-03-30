@@ -26,7 +26,10 @@ const BOOKING_ACTION_HTML_BASE = 'https://ronisnailstudio.com/api/booking';
  */
 const RESCHEDULE_PAGE_BASE = 'https://ronisnailstudio.com/reschedule.html';
 
-/** Sheet columns A–K: … eventId (I), actionToken (J), reminderSent (K) for 2-day email */
+/** Owner proposes alternate time (from booking-request email). */
+const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request.html';
+
+/** Sheet: A–K as before; L/M/N = proposed date, proposed time, modificationClientToken (2-day still uses K). */
 function generateActionToken() {
   return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
 }
@@ -172,7 +175,7 @@ function syncCalendarToSpreadsheet() {
     const status = data[i][7];
     const eventId = data[i][8];
     if (
-      (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING') &&
+      (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING' || status === 'MOD_PROPOSED') &&
       eventId &&
       String(eventId).indexOf('pending') < 0
     ) {
@@ -301,10 +304,16 @@ function doGet(e) {
     if (rowIndex < 0) {
       return htmlPage('Not found', '<h2>Booking not found</h2><p>No matching request. It may have been removed.</p>');
     }
-    if (rowStatus !== 'PENDING') {
+    if (rowStatus !== 'PENDING' && rowStatus !== 'MOD_PROPOSED') {
       return htmlPage('Already handled', '<h2>Already handled</h2><p>This request was already approved or declined.</p>');
     }
     if (action === 'accept') {
+        if (rowStatus === 'MOD_PROPOSED') {
+          return htmlPage(
+            'Waiting on client',
+            '<h2>Alternate time pending</h2><p>You already suggested a different time. Wait for the client to confirm it, or use <strong>Decline</strong> to cancel this request.</p>'
+          );
+        }
         const cal = CalendarApp.getCalendarById(CALENDAR_ID);
         const ev = cal.getEventById(eventId);
         if (ev) { 
@@ -324,6 +333,9 @@ function doGet(e) {
     if (action === 'reject') {
        const cal = CalendarApp.getCalendarById(CALENDAR_ID); const ev = cal.getEventById(eventId); if (ev) ev.deleteEvent();
        sheet.getRange(rowIndex, 8).setValue('REJECTED');
+       sheet.getRange(rowIndex, 12).setValue('');
+       sheet.getRange(rowIndex, 13).setValue('');
+       sheet.getRange(rowIndex, 14).setValue('');
        const neatD = formatSheetDateForEmail(dateVal);
        const neatTime = formatSheetTimeForEmail(timeStr);
        const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service);
@@ -334,6 +346,127 @@ function doGet(e) {
        return htmlPage('Declined', '<h2>Request declined</h2><p>The client has been notified.</p>');
     }
     return htmlPage('Not supported', '<h2>Unsupported action</h2>');
+  }
+
+  if (action === 'client_accept_mod' || action === 'client_decline_mod') {
+    if (!eventId || !token) {
+      return htmlPage('Invalid link', '<h2>Invalid link</h2><p>This link is incomplete.</p>');
+    }
+    const ss = getCRMSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    let clientName = 'Client';
+    let clientEmail = '';
+    let service = '';
+    let dateVal = '';
+    let timeStr = '';
+    let rowStatus = '';
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8]) !== String(eventId)) continue;
+      if (!tokenMatches(data[i][13], token)) {
+        return htmlPage('Invalid link', '<h2>Invalid or expired link</h2><p>Use the buttons in the alternate-time email.</p>');
+      }
+      rowIndex = i + 1;
+      rowStatus = data[i][7];
+      clientName = data[i][1];
+      service = data[i][3];
+      dateVal = data[i][4];
+      timeStr = data[i][5];
+      clientEmail = data[i][6];
+      break;
+    }
+    if (rowIndex < 0) {
+      return htmlPage('Not found', '<h2>Booking not found</h2>');
+    }
+    if (rowStatus !== 'MOD_PROPOSED') {
+      return htmlPage('Not available', '<h2>Link not valid</h2><p>This alternate-time request is no longer active.</p>');
+    }
+    const proposedDateVal = data[rowIndex - 1][11];
+    const proposedTimeRaw = data[rowIndex - 1][12];
+    if (!proposedTimeRaw) {
+      return htmlPage('Error', '<h2>Something went wrong</h2><p>Missing proposed time. Please contact the studio.</p>');
+    }
+    const tz = Session.getScriptTimeZone();
+    const datePart =
+      proposedDateVal instanceof Date
+        ? Utilities.formatDate(proposedDateVal, tz, 'yyyy-MM-dd')
+        : String(proposedDateVal).split('T')[0].split(' ')[0];
+    const propTimeStr = String(proposedTimeRaw).trim();
+    if (action === 'client_decline_mod') {
+      const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+      const ev = cal.getEventById(eventId);
+      if (ev) ev.deleteEvent();
+      sheet.getRange(rowIndex, 8).setValue('MOD_DECLINED');
+      sheet.getRange(rowIndex, 12).setValue('');
+      sheet.getRange(rowIndex, 13).setValue('');
+      sheet.getRange(rowIndex, 14).setValue('');
+      SpreadsheetApp.flush();
+      const neatD = formatSheetDateForEmail(dateVal);
+      const neatTime = formatSheetTimeForEmail(timeStr);
+      if (clientEmail) {
+        const declineHtml = getAlternateDeclinedClientEmailHtml(clientName, neatD, neatTime, service);
+        MailApp.sendEmail({
+          to: clientEmail,
+          name: "Roni's Nail Studio",
+          subject: "Alternate time — Roni's Nail Studio",
+          htmlBody: declineHtml,
+        });
+      }
+      MailApp.sendEmail({
+        to: MY_EMAIL,
+        subject: 'Client declined alternate time: ' + clientName,
+        htmlBody:
+          '<p style="font-family:sans-serif;">' +
+          escapeHtml(clientName) +
+          ' declined the proposed alternate time. Original request was ' +
+          escapeHtml(neatD) +
+          ' at ' +
+          escapeHtml(neatTime) +
+          '.</p>',
+      });
+      return htmlPage('Recorded', '<h2>Thanks for letting us know</h2><p>You can book another time on our website whenever you like.</p>');
+    }
+    const start = new Date(datePart + 'T' + convertTo24Hour(propTimeStr));
+    if (isNaN(start.getTime())) {
+      return htmlPage('Error', '<h2>Invalid time</h2><p>Please contact the studio.</p>');
+    }
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    const ev = cal.getEventById(eventId);
+    if (!ev) {
+      return htmlPage('Error', '<h2>Calendar error</h2><p>Please contact the studio.</p>');
+    }
+    const durMin = effectiveDurationMinutesFromEvent_(ev);
+    const newEnd = new Date(start.getTime() + durMin * 60000);
+    const nEv = cal.createEvent(clientName, start, newEnd, { description: ev.getDescription() });
+    ev.deleteEvent();
+    sheet.getRange(rowIndex, 9).setValue(nEv.getId());
+    sheet.getRange(rowIndex, 5).setValue(start);
+    const neatTimeDisplay = Utilities.formatDate(start, tz, 'h:mm a');
+    sheet.getRange(rowIndex, 6).setValue(neatTimeDisplay);
+    sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
+    sheet.getRange(rowIndex, 12).setValue('');
+    sheet.getRange(rowIndex, 13).setValue('');
+    sheet.getRange(rowIndex, 14).setValue('');
+    SpreadsheetApp.flush();
+    const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+    const acceptHtml = getConfirmedEmailHtml(clientName, neatDate, neatTimeDisplay, service);
+    if (clientEmail) {
+      MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Appointment Confirmed: Roni's Nail Studio", htmlBody: acceptHtml });
+    }
+    MailApp.sendEmail({
+      to: MY_EMAIL,
+      subject: 'Client accepted alternate time: ' + clientName,
+      htmlBody:
+        '<p style="font-family:sans-serif;"><strong>' +
+        escapeHtml(clientName) +
+        '</strong> accepted the proposed time: <strong>' +
+        escapeHtml(neatDate) +
+        '</strong> at <strong>' +
+        escapeHtml(neatTimeDisplay) +
+        '</strong>.</p>',
+    });
+    return htmlPage('Confirmed', '<h2>You\'re all set!</h2><p>Your appointment is confirmed. We\'ll see you then.</p>');
   }
 
   if (action === 'client_confirm' || action === 'client_cancel') {
@@ -485,6 +618,96 @@ function doGet(e) {
   return htmlPage('Bad request', '<h2>Bad request</h2>');
 }
 
+function handleOwnerProposeAlternate(d) {
+  if (!d.eventId || !d.ownerToken || !d.proposedDate || !d.proposedTime) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  let clientEmail = '';
+  let clientName = '';
+  let service = '';
+  let origDateVal = '';
+  let origTimeStr = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][8]) !== String(d.eventId)) continue;
+    if (!tokenMatches(data[i][9], d.ownerToken)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_token' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    rowIndex = i + 1;
+    const st = data[i][7];
+    if (st !== 'PENDING') {
+      if (st === 'MOD_PROPOSED') {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'already_proposed' })).setMimeType(ContentService.MimeType.JSON);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'not_pending' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    clientName = data[i][1];
+    clientEmail = data[i][6];
+    service = data[i][3];
+    origDateVal = data[i][4];
+    origTimeStr = data[i][5];
+    break;
+  }
+  if (rowIndex < 0) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'not_found' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const pds = d.proposedDate.toString().split('T')[0];
+  const propTimeTrim = String(d.proposedTime).trim();
+  const testStart = new Date(pds + 'T' + convertTo24Hour(propTimeTrim));
+  if (isNaN(testStart.getTime())) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const tz = Session.getScriptTimeZone();
+  const pdate = new Date(pds + 'T12:00:00');
+  const modTok = generateActionToken();
+  sheet.getRange(rowIndex, 12).setValue(pdate);
+  sheet.getRange(rowIndex, 13).setValue(propTimeTrim);
+  sheet.getRange(rowIndex, 14).setValue(modTok);
+  sheet.getRange(rowIndex, 8).setValue('MOD_PROPOSED');
+  SpreadsheetApp.flush();
+  const origNeatD = formatSheetDateForEmail(origDateVal);
+  const origNeatT = formatSheetTimeForEmail(origTimeStr);
+  const newNeatD = Utilities.formatDate(pdate, tz, 'EEEE, MMMM d, yyyy');
+  if (clientEmail) {
+    const html = getAlternateProposalClientEmailHtml(
+      clientName,
+      origNeatD,
+      origNeatT,
+      newNeatD,
+      propTimeTrim,
+      service,
+      d.eventId,
+      modTok
+    );
+    MailApp.sendEmail({
+      to: clientEmail,
+      name: "Roni's Nail Studio",
+      subject: "Suggested appointment time — Roni's Nail Studio",
+      htmlBody: html,
+    });
+  }
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Alternate time proposed to client: ' + clientName,
+    htmlBody:
+      '<p style="font-family:sans-serif;">Proposed <strong>' +
+      escapeHtml(newNeatD) +
+      ' at ' +
+      escapeHtml(propTimeTrim) +
+      '</strong> to ' +
+      escapeHtml(clientName) +
+      ' (was ' +
+      escapeHtml(origNeatD) +
+      ' at ' +
+      escapeHtml(origNeatT) +
+      ').</p>',
+  });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function handleReschedulePost(d) {
   if (!d.eventId || !d.token || !d.date || !d.time) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
@@ -546,13 +769,16 @@ function handleReschedulePost(d) {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.ownerProposeAlternate === true) {
+      return handleOwnerProposeAlternate(d);
+    }
     if (d.reschedule === true) {
       return handleReschedulePost(d);
     }
     const actionToken = generateActionToken();
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     const row = s.getLastRow() + 1;
-    s.appendRow([new Date(), d.clientName, d.phone, d.service, d.date, d.time, d.email, 'PENDING', '', actionToken, '']);
+    s.appendRow([new Date(), d.clientName, d.phone, d.service, d.date, d.time, d.email, 'PENDING', '', actionToken, '', '', '', '']);
     SpreadsheetApp.flush();
     const c = CalendarApp.getCalendarById(CALENDAR_ID);
     const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
@@ -761,11 +987,59 @@ function sendTwoDayReminders() {
   }
 }
 
+function getAlternateProposalClientEmailHtml(name, origDate, origTime, newDate, newTime, service, eventId, modToken) {
+  const n = escapeHtml(name);
+  const qOk = 'action=client_accept_mod&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(modToken);
+  const qNo = 'action=client_decline_mod&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(modToken);
+  const urlOk = buildBookingActionUrl(qOk);
+  const urlNo = buildBookingActionUrl(qNo);
+  const rows =
+    emailDetailRow('Service', service) +
+    emailDetailRow('You requested', origDate + ' · ' + origTime) +
+    emailDetailRow('Suggested time', newDate + ' · ' + newTime);
+  return (
+    '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px; background: #fff;">' +
+    '<p style="font-size: 16px; color: #1a1a1a;">Hi ' +
+    n +
+    ',</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Roni suggested a different time that may work better. If it works for you, confirm below. If not, you can always pick another slot on our website.</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
+    rows +
+    '</tbody></table>' +
+    '<div style="text-align: center;">' +
+    '<a href="' +
+    urlOk +
+    '" style="background-color:#111;color:#fff;padding:14px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Yes, that works</a>' +
+    '<a href="' +
+    urlNo +
+    '" style="background-color:#fff;color:#666;border:1px solid #ccc;padding:12px;text-decoration:none;border-radius:8px;display:block;">No thanks</a>' +
+    '</div>' +
+    '<p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>'
+  );
+}
+
+function getAlternateDeclinedClientEmailHtml(name, origDate, origTime, service) {
+  const n = escapeHtml(name);
+  const rows = emailDetailRow('Your original request', origDate + ' · ' + origTime) + emailDetailRow('Service', service);
+  return (
+    '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px;">' +
+    '<p style="font-size: 16px; color: #1a1a1a;">Hi ' +
+    n +
+    ',</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">No problem — we won\'t hold that alternate time. Whenever you\'re ready, you can submit a new booking on our website.</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
+    rows +
+    '</tbody></table>' +
+    '<p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>'
+  );
+}
+
 function getRequestEmailHtml(name, service, phone, email, date, time, eventId, actionToken) {
   const q = 'action=accept&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const qr = 'action=reject&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const acc = buildBookingActionUrl(q);
   const rej = buildBookingActionUrl(qr);
+  const modUrl = OWNER_MODIFY_PAGE_BASE + '?eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   return `
     <div style="font-family: sans-serif; padding: 32px; max-width: 450px; margin: auto; border: 1px solid #eaeaea; border-radius: 12px;">
       <h2 style="color: #111; font-weight: 500; font-size: 20px; text-align: center;">New Booking Request</h2>
@@ -779,6 +1053,7 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
       </div>
       <div style="text-align: center;">
         <a href="${acc}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 500; display: block; margin-bottom: 12px;">Approve Request</a>
+        <a href="${modUrl}" style="background-color: #fff; color: #111; border: 1px solid #111; padding: 12px; text-decoration: none; border-radius: 8px; font-weight: 500; display: block; margin-bottom: 12px;">Suggest a different time</a>
         <a href="${rej}" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; padding: 12px; text-decoration: none; border-radius: 8px; display: block;">Decline Request</a>
       </div>
     </div>`;
