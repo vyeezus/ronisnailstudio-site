@@ -31,10 +31,10 @@ body {
 /* Base Texture layer: Starry Cute Wallpaper */
 .background-texture {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     background-image: url('bg.png');
     background-size: cover;
     background-position: center;
@@ -52,10 +52,10 @@ body {
 /* The lush pastel wash over the texture */
 .background-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     background: var(--bg-overlay); 
     backdrop-filter: blur(8px); /* Soft focus */
     -webkit-backdrop-filter: blur(8px);

@@ -371,7 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
         requestAnimationFrame(() => {
             renderTimeSlots(dateStr, dayOfWeek);
             setTimeout(() => {
-                slotsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                slotsSection.scrollIntoView({ behavior: 'auto', block: 'start' });
             }, 50);
         });
     }
