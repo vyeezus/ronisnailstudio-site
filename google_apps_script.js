@@ -384,15 +384,18 @@ function doGet(e) {
     }
     const proposedDateVal = data[rowIndex - 1][11];
     const proposedTimeRaw = data[rowIndex - 1][12];
-    if (!proposedTimeRaw) {
+    if (proposedTimeRaw === '' || proposedTimeRaw === null || proposedTimeRaw === undefined) {
       return htmlPage('Error', '<h2>Something went wrong</h2><p>Missing proposed time. Please contact the studio.</p>');
     }
     const tz = Session.getScriptTimeZone();
-    const datePart =
-      proposedDateVal instanceof Date
-        ? Utilities.formatDate(proposedDateVal, tz, 'yyyy-MM-dd')
-        : String(proposedDateVal).split('T')[0].split(' ')[0];
-    const propTimeStr = String(proposedTimeRaw).trim();
+    const datePart = syncSheetDateToYyyyMmDd_(proposedDateVal);
+    const propTimeStr = formatSheetTimeForEmail(proposedTimeRaw);
+    if (!propTimeStr) {
+      return htmlPage('Error', '<h2>Something went wrong</h2><p>Missing proposed time. Please contact the studio.</p>');
+    }
+    if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return htmlPage('Error', '<h2>Invalid date</h2><p>Please contact the studio.</p>');
+    }
     if (action === 'client_decline_mod') {
       const cal = CalendarApp.getCalendarById(CALENDAR_ID);
       const ev = cal.getEventById(eventId);
@@ -427,7 +430,7 @@ function doGet(e) {
       });
       return htmlPage('Recorded', '<h2>Thanks for letting us know</h2><p>You can book another time on our website whenever you like.</p>');
     }
-    const start = new Date(datePart + 'T' + convertTo24Hour(propTimeStr));
+    const start = parseYmdAndTimeLocal_(datePart, convertTo24Hour(propTimeStr));
     if (isNaN(start.getTime())) {
       return htmlPage('Error', '<h2>Invalid time</h2><p>Please contact the studio.</p>');
     }
@@ -656,7 +659,7 @@ function handleOwnerProposeAlternate(d) {
   }
   const pds = d.proposedDate.toString().split('T')[0];
   const propTimeTrim = String(d.proposedTime).trim();
-  const testStart = new Date(pds + 'T' + convertTo24Hour(propTimeTrim));
+  const testStart = parseYmdAndTimeLocal_(pds, convertTo24Hour(propTimeTrim));
   if (isNaN(testStart.getTime())) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -1146,9 +1149,39 @@ function testEmailPreview() {
   Logger.log("Sent 3 preview emails to: " + MY_EMAIL);
 }
 
+/**
+ * Build a local wall-clock Date (script project timezone behavior via JS Date parts).
+ * Avoids new Date('yyyy-MM-ddTHH:mm:ss') which can be Invalid in some Apps Script cases.
+ */
+function parseYmdAndTimeLocal_(yyyyMmDd, hhMmSs) {
+  const dp = String(yyyyMmDd).split('-');
+  const tp = String(hhMmSs || '0:0:0').split(':');
+  const y = parseInt(dp[0], 10);
+  const mo = parseInt(dp[1], 10) - 1;
+  const d = parseInt(dp[2], 10);
+  const h = parseInt(tp[0], 10);
+  const mi = parseInt(tp[1], 10) || 0;
+  if (isNaN(y) || isNaN(mo) || isNaN(d) || isNaN(h) || isNaN(mi)) return new Date(NaN);
+  return new Date(y, mo, d, h, mi, 0);
+}
+
 function convertTo24Hour(timeStr) {
-  const [time, modifier] = timeStr.split(' '); let [hours, minutes] = time.split(':');
-  if (hours === '12') hours = '00';
-  if (modifier === 'PM' || modifier === 'pm') hours = parseInt(hours, 10) + 12;
-  return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+  const s = String(timeStr == null ? '' : timeStr)
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!s) return '00:00:00';
+  const bits = s.split(' ');
+  const modifier = bits.length > 1 ? bits[bits.length - 1].toUpperCase() : '';
+  const timePart = bits.length > 1 ? bits.slice(0, -1).join(' ') : bits[0];
+  let [hours, minutes] = timePart.split(':');
+  if (minutes === undefined) minutes = '00';
+  else minutes = String(minutes).replace(/\D/g, '').slice(0, 2) || '00';
+  hours = parseInt(hours, 10);
+  minutes = parseInt(minutes, 10);
+  if (isNaN(hours) || isNaN(minutes)) return '00:00:00';
+  let h = hours;
+  if (modifier === 'PM' && hours !== 12) h = hours + 12;
+  if (modifier === 'AM' && hours === 12) h = 0;
+  if (modifier !== 'AM' && modifier !== 'PM') h = hours;
+  return `${String(h).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
 }
