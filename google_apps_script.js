@@ -217,8 +217,9 @@ function getActiveBookingEvent_(calendar, eventId) {
  * --- Calendar → Sheet sync ---
  * - You moved the event: sheet + client “time updated” email.
  * - You deleted the event (on THIS studio calendar — CALENDAR_ID): sheet → CANCELLED, client email.
- * Best latency: one “Calendar – Changed” trigger on this calendar (not two deployments). Optional clock
- * backup: installCalendarSyncTrigger() — personal @gmail may only get hourly.
+ * Best setup: (1) installStudioCalendarOnChangeTrigger() — must use studio calendar CALENDAR_ID (not
+ * personal). (2) installCalendarSyncTrigger() — time-based backup; deletes sometimes don’t fire
+ * onEventUpdated reliably on group calendars. (3) One deployment only (Head or version, not both).
  * Optional: Editor → Services → add “Google Calendar API” so deleted/cancelled events are detected reliably.
  */
 function syncCalendarToSpreadsheet() {
@@ -345,16 +346,18 @@ function syncCalendarToSpreadsheetBody_() {
 }
 
 /**
- * One-time setup: time-driven trigger for syncCalendarToSpreadsheet.
- * Personal Google accounts often cannot schedule triggers more often than once per hour; this tries 10 minutes
- * first, then falls back to every 1 hour. Check Triggers (clock icon) and Executions after running.
+ * Time-driven backup for syncCalendarToSpreadsheet (does NOT remove calendar on-change triggers).
+ * Important: installCalendarSyncTrigger used to bail out if *any* trigger existed — so with only a
+ * Calendar trigger, no clock backup was added. Deletes on group calendars often need this backup.
+ * Personal @gmail: may fall back to hourly.
  */
 function installCalendarSyncTrigger() {
   const fn = 'syncCalendarToSpreadsheet';
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === fn) {
-      Logger.log('Trigger already exists for ' + fn);
+    if (triggers[i].getHandlerFunction() !== fn) continue;
+    if (triggers[i].getEventType() === ScriptApp.EventType.CLOCK) {
+      Logger.log('Time-based trigger already exists for ' + fn);
       return;
     }
   }
@@ -368,23 +371,62 @@ function installCalendarSyncTrigger() {
 }
 
 /**
- * Removes every time-based trigger that calls syncCalendarToSpreadsheet, then installs a fresh one.
- * Use if you suspect an old trigger is stale or pointed at the wrong project copy.
+ * Calendar “event updated” trigger on the STUDIO calendar (CALENDAR_ID). Run this if your manual
+ * trigger was tied to the wrong calendar — deletes won’t sync if the trigger watches personal, not studio.
+ */
+function installStudioCalendarOnChangeTrigger() {
+  const fn = 'syncCalendarToSpreadsheet';
+  const wantId = String(CALENDAR_ID).toLowerCase().replace(/\s/g, '');
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() !== fn) continue;
+    if (triggers[i].getEventType() !== ScriptApp.EventType.ON_EVENT_UPDATED) continue;
+    const src = String(triggers[i].getTriggerSourceId() || '')
+      .toLowerCase()
+      .replace(/\s/g, '');
+    if (src === wantId) {
+      Logger.log('Studio calendar on-change trigger already present (source ' + triggers[i].getTriggerSourceId() + ')');
+      return;
+    }
+  }
+  // forUserCalendar(id) accepts email or full calendar ID (e.g. …@group.calendar.google.com). forCalendar() is not on TriggerBuilder.
+  ScriptApp.newTrigger(fn).forUserCalendar(CALENDAR_ID).onEventUpdated().create();
+  Logger.log('Installed onEventUpdated trigger on studio calendar: ' + CALENDAR_ID);
+}
+
+/** Removes only ON_EVENT_UPDATED triggers for sync, then adds one on CALENDAR_ID. */
+function reinstallStudioCalendarOnChangeTrigger() {
+  const fn = 'syncCalendarToSpreadsheet';
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = triggers.length - 1; i >= 0; i--) {
+    if (triggers[i].getHandlerFunction() !== fn) continue;
+    if (triggers[i].getEventType() === ScriptApp.EventType.ON_EVENT_UPDATED) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger(fn).forUserCalendar(CALENDAR_ID).onEventUpdated().create();
+  Logger.log('Reinstalled onEventUpdated on studio calendar: ' + CALENDAR_ID);
+}
+
+/**
+ * Removes only CLOCK triggers for syncCalendarToSpreadsheet, then installs a fresh time-based one.
+ * Does not remove calendar on-change triggers.
  */
 function reinstallCalendarSyncTrigger() {
   const fn = 'syncCalendarToSpreadsheet';
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = triggers.length - 1; i >= 0; i--) {
-    if (triggers[i].getHandlerFunction() === fn) {
+    if (triggers[i].getHandlerFunction() !== fn) continue;
+    if (triggers[i].getEventType() === ScriptApp.EventType.CLOCK) {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
   try {
     ScriptApp.newTrigger(fn).timeBased().everyMinutes(10).create();
-    Logger.log('Reinstalled: ' + fn + ' every 10 minutes');
+    Logger.log('Reinstalled CLOCK: ' + fn + ' every 10 minutes');
   } catch (e) {
     ScriptApp.newTrigger(fn).timeBased().everyHours(1).create();
-    Logger.log('Reinstalled: ' + fn + ' every 1 hour (10 min not allowed). Reason: ' + e);
+    Logger.log('Reinstalled CLOCK: ' + fn + ' every 1 hour (10 min not allowed). Reason: ' + e);
   }
 }
 
@@ -419,18 +461,49 @@ function validateCalendarSyncSetup() {
   }
   const triggers = ScriptApp.getProjectTriggers();
   let syncTriggers = 0;
+  let hasClock = false;
+  let hasCal = false;
+  const wantCalNorm = String(CALENDAR_ID).toLowerCase().replace(/\s/g, '');
+  let calendarTriggerMatchesStudio = false;
   for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'syncCalendarToSpreadsheet') {
-      syncTriggers++;
+    if (triggers[i].getHandlerFunction() !== 'syncCalendarToSpreadsheet') continue;
+    syncTriggers++;
+    const et = triggers[i].getEventType();
+    if (et === ScriptApp.EventType.CLOCK) hasClock = true;
+    if (et === ScriptApp.EventType.ON_EVENT_UPDATED) {
+      hasCal = true;
+      let src = '';
+      try {
+        src = triggers[i].getTriggerSourceId();
+      } catch (e) {
+        src = '';
+      }
+      if (String(src).toLowerCase().replace(/\s/g, '') === wantCalNorm) {
+        calendarTriggerMatchesStudio = true;
+      }
       lines.push(
-        'Trigger: syncCalendarToSpreadsheet | type=' +
-          triggers[i].getEventType() +
-          ' (TIME_CLOCK = scheduled)'
+        'Trigger: syncCalendarToSpreadsheet | eventType=' +
+          et +
+          (src ? ' | calendarSourceId=' + src : '')
       );
+    } else {
+      lines.push('Trigger: syncCalendarToSpreadsheet | eventType=' + et);
     }
   }
   if (syncTriggers === 0) {
-    lines.push('WARNING: no trigger calls syncCalendarToSpreadsheet — run installCalendarSyncTrigger()');
+    lines.push('WARNING: no trigger — run installStudioCalendarOnChangeTrigger() and installCalendarSyncTrigger()');
+  } else {
+    if (!hasCal) {
+      lines.push('TIP: no ON_EVENT_UPDATED — run installStudioCalendarOnChangeTrigger() for fast updates');
+    } else if (!calendarTriggerMatchesStudio) {
+      lines.push(
+        '!!! FIX THIS: Calendar trigger is on the WRONG calendar (e.g. personal @gmail). studio CALENDAR_ID must match calendarSourceId.'
+      );
+      lines.push('!!! Run reinstallStudioCalendarOnChangeTrigger() once, then validate again.');
+    }
+    if (!hasClock) {
+      lines.push('TIP: no CLOCK backup — run installCalendarSyncTrigger() so deletes still sync if calendar trigger misses');
+    }
   }
   const out = lines.join('\n');
   Logger.log(out);

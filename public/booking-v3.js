@@ -283,7 +283,7 @@ function bootBookingPage() {
                 const closingDateTime = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
                 const isOverClosing = slotEnd > closingDateTime;
 
-                if (!isConflict && !isOverClosing) {
+                if (!isConflict && !isOverClosing && !isSlotStartInPastForToday(dateStr, slotStart)) {
                     return true;
                 }
             }
@@ -339,6 +339,16 @@ function bootBookingPage() {
 
     function formatDate(d) {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function isDateStrToday(dateStr) {
+        return dateStr === formatDate(new Date());
+    }
+
+    /** Today only: start time is already at or before now (local) — not bookable. */
+    function isSlotStartInPastForToday(dateStr, slotStart) {
+        if (!isDateStrToday(dateStr)) return false;
+        return slotStart.getTime() <= Date.now();
     }
 
     prevBtn.addEventListener('click', () => {
@@ -400,13 +410,14 @@ function bootBookingPage() {
 
                 const closingDateTime = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
                 const isOverClosing = slotEnd > closingDateTime;
+                const isPastToday = isSlotStartInPastForToday(dateStr, slotStart);
                 const isOptimal = isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr);
 
                 const pill = document.createElement('button');
                 pill.className = 'slot-pill';
                 pill.textContent = timeStr12;
 
-                if (isConflict || isOverClosing) {
+                if (isConflict || isOverClosing || isPastToday) {
                     pill.classList.add('busy');
                     pill.style.textDecoration = 'line-through';
                     pill.style.opacity = '0.35';
