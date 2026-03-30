@@ -85,32 +85,15 @@
             100% { background-position: -100% 0; }
         }
 
-        /* Same glass as index (global .form-section + .background-overlay). Scroll help for Chrome without flattening colors. */
-        html.page-booking,
-        body.page-booking {
-            overflow-anchor: none;
-        }
-        #booking-flow {
-            contain: layout;
-        }
-        /* Booking only: fill dynamic viewport on iOS Chrome (toolbar strip). Home uses global 100vh layers. */
-        html.page-booking {
-            background-color: #fdf5f9;
-            min-height: 100%;
-        }
-        html.page-booking body.page-booking {
-            min-height: 100vh;
-            min-height: 100dvh;
-        }
-        html.page-booking .background-texture,
-        html.page-booking .background-overlay {
-            inset: 0;
-            top: 0;
-            left: 0;
-            width: auto;
-            height: auto;
-            min-height: 100%;
-            min-height: 100dvh;
+        /* Match index glassmorphism */
+        .form-section {
+            background: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 32px;
+            padding: 3.5rem 3rem;
+            box-shadow: 0 15px 40px rgba(119, 78, 120, 0.05);
         }
         .cal-header {
             display: flex;
