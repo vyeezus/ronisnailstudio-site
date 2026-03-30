@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Book client (admin) | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .admin-book-page { max-width: 520px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .admin-book-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; color: var(--text-main); text-align: center; }
+        .admin-book-page .sub { font-size: 0.88rem; color: var(--text-muted); text-align: center; margin-bottom: 1rem; line-height: 1.6; }
+        .admin-nav { text-align: center; margin-bottom: 1.5rem; font-size: 0.88rem; }
+        .admin-nav a { color: var(--text-accent); text-decoration: none; font-weight: 500; }
+        .admin-nav a:hover { text-decoration: underline; }
+        .admin-book-page .note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.25rem; padding: 0.85rem 1rem; background: rgba(178, 115, 154, 0.06); border-radius: 10px; line-height: 1.55; }
+        .admin-book-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
+        .admin-book-page input[type="password"], .admin-book-page input[type="text"], .admin-book-page input[type="email"], .admin-book-page input[type="tel"], .admin-book-page input[type="date"], .admin-book-page input[type="number"], .admin-book-page textarea {
+            width: 100%; padding: 0.75rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 0.9rem; box-sizing: border-box;
+        }
+        .admin-book-page textarea { min-height: 4rem; resize: vertical; }
+        .admin-book-page input:focus, .admin-book-page textarea:focus { outline: none; border-color: var(--text-accent); }
+        .secret-block { margin-bottom: 1.25rem; }
+        .lookup-block { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(178, 115, 154, 0.12); }
+        .match-list { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
+        .match-list li { margin-bottom: 0.45rem; }
+        .match-list button {
+            width: 100%; text-align: left; padding: 0.65rem 0.85rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.7); cursor: pointer; font-family: var(--font-body); font-size: 0.88rem; color: var(--text-main);
+        }
+        .match-list button:hover { border-color: var(--text-accent); background: #fff; }
+        .match-list .meta { display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; }
+        .remember { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted); }
+        .remember input { width: auto; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; }
+        .admin-book-page .cute-btn { flex: 1; min-width: 140px; border: none; cursor: pointer; font-family: var(--font-body); }
+        .admin-book-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+        .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
+        .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
+        .lookup-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.5rem; margin-bottom: 0.75rem; }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+    <main class="container">
+        <div class="form-section admin-book-page">
+            <h1>Book a client</h1>
+            <p class="sub">Creates a <strong>confirmed</strong> row, calendar event, and sends the same confirmation email as an approved online booking. Search by name to pull phone/email from past <strong>Bookings</strong> rows.</p>
+            <p class="admin-nav"><a href="admin-studio-hours.html">Edit studio hours</a> · <a href="index.html">Home</a></p>
+            <p class="note">Uses the same <strong>BOOKING_ADMIN_SECRET</strong> as studio hours. Paste the latest <code>google_apps_script.js</code> into Apps Script, then <strong>Deploy → New version</strong>.</p>
+            <div id="msg" class="msg" role="status"></div>
+            <div class="secret-block">
+                <label for="admin-secret">Admin secret</label>
+                <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
+                <label class="remember">
+                    <input type="checkbox" id="remember-secret">
+                    Remember on this device (session only)
+                </label>
+            </div>
+            <div class="lookup-block">
+                <label for="lookup-name">Find in CRM (type name)</label>
+                <input type="text" id="lookup-name" autocomplete="off" placeholder="e.g. Sarah">
+                <p class="lookup-hint">Matches names in your Bookings sheet. Pick a row to fill contact fields. New clients: skip and type everything below.</p>
+                <ul id="match-list" class="match-list" aria-live="polite"></ul>
+            </div>
+            <label for="client-name">Client name</label>
+            <input type="text" id="client-name" required autocomplete="name">
+            <label for="client-phone">Phone</label>
+            <input type="tel" id="client-phone" autocomplete="tel">
+            <label for="client-email">Email</label>
+            <input type="email" id="client-email" required autocomplete="email">
+            <label for="service">Service description</label>
+            <textarea id="service" required placeholder="e.g. Structured Gel refill + Tier 2 art"></textarea>
+            <label for="appt-date">Date</label>
+            <input type="date" id="appt-date" required>
+            <label for="appt-time">Time</label>
+            <input type="text" id="appt-time" required placeholder="2:30 PM">
+            <label for="duration">Duration (minutes)</label>
+            <input type="number" id="duration" min="15" max="480" step="15" value="60">
+            <div class="btn-row">
+                <button type="button" class="cute-btn" id="btn-submit">Create booking &amp; send email</button>
+            </div>
+        </div>
+    </main>
+    <script>
+        (function () {
+            var PROXY = window.location.origin + '/api/booking';
+            var STORAGE_KEY = 'booking_admin_secret_session';
+
+            var msg = document.getElementById('msg');
+            var secretInput = document.getElementById('admin-secret');
+            var rememberCb = document.getElementById('remember-secret');
+            var lookupName = document.getElementById('lookup-name');
+            var matchList = document.getElementById('match-list');
+            var clientName = document.getElementById('client-name');
+            var clientPhone = document.getElementById('client-phone');
+            var clientEmail = document.getElementById('client-email');
+            var service = document.getElementById('service');
+            var apptDate = document.getElementById('appt-date');
+            var apptTime = document.getElementById('appt-time');
+            var duration = document.getElementById('duration');
+            var btnSubmit = document.getElementById('btn-submit');
+
+            try {
+                var saved = sessionStorage.getItem(STORAGE_KEY);
+                if (saved) secretInput.value = saved;
+            } catch (e) { /* ignore */ }
+
+            function clearMsg() {
+                msg.className = 'msg';
+                msg.textContent = '';
+            }
+            function setMsg(ok, text) {
+                msg.className = 'msg ' + (ok ? 'ok' : 'err');
+                msg.textContent = text;
+            }
+
+            var lookupTimer = null;
+            function runLookup() {
+                var secret = secretInput.value.trim();
+                var q = lookupName.value.trim();
+                matchList.innerHTML = '';
+                if (!secret || q.length < 2) return;
+
+                fetch(PROXY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ownerLookupClient: true,
+                        adminSecret: secret,
+                        query: q,
+                    }),
+                })
+                    .then(function (r) {
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (!data || data.status !== 'success') {
+                            if (data && data.message === 'unauthorized') setMsg(false, 'Wrong admin secret.');
+                            return;
+                        }
+                        (data.matches || []).forEach(function (m) {
+                            var li = document.createElement('li');
+                            var btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.innerHTML =
+                                '<strong>' +
+                                escapeHtml(m.name) +
+                                '</strong><span class="meta">' +
+                                escapeHtml(m.email || '—') +
+                                (m.phone ? ' · ' + escapeHtml(m.phone) : '') +
+                                (m.lastBooked ? ' · Last booking: ' + escapeHtml(m.lastBooked) : '') +
+                                '</span>';
+                            btn.addEventListener('click', function () {
+                                clientName.value = m.name || '';
+                                clientPhone.value = m.phone || '';
+                                clientEmail.value = m.email || '';
+                                matchList.innerHTML = '';
+                                lookupName.value = '';
+                                clearMsg();
+                            });
+                            li.appendChild(btn);
+                            matchList.appendChild(li);
+                        });
+                    })
+                    .catch(function () { /* silent */ });
+            }
+
+            function escapeHtml(s) {
+                var d = document.createElement('div');
+                d.textContent = s == null ? '' : String(s);
+                return d.innerHTML;
+            }
+
+            lookupName.addEventListener('input', function () {
+                clearMsg();
+                if (lookupTimer) clearTimeout(lookupTimer);
+                matchList.innerHTML = '';
+                var q = lookupName.value.trim();
+                if (q.length < 2) return;
+                lookupTimer = setTimeout(runLookup, 400);
+            });
+
+            btnSubmit.addEventListener('click', function () {
+                clearMsg();
+                var secret = secretInput.value.trim();
+                if (!secret) {
+                    setMsg(false, 'Enter your admin secret.');
+                    return;
+                }
+                var name = clientName.value.trim();
+                var phone = clientPhone.value.trim();
+                var email = clientEmail.value.trim();
+                var svc = service.value.trim();
+                var d = apptDate.value;
+                var t = apptTime.value.trim();
+                var dur = parseInt(duration.value, 10);
+                if (!name || !email || !svc || !d || !t) {
+                    setMsg(false, 'Fill name, email, service, date, and time.');
+                    return;
+                }
+                if (isNaN(dur) || dur < 15) dur = 60;
+
+                try {
+                    if (rememberCb.checked) sessionStorage.setItem(STORAGE_KEY, secret);
+                    else sessionStorage.removeItem(STORAGE_KEY);
+                } catch (e) { /* ignore */ }
+
+                btnSubmit.disabled = true;
+                fetch(PROXY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ownerDirectBooking: true,
+                        adminSecret: secret,
+                        clientName: name,
+                        phone: phone,
+                        email: email,
+                        service: svc,
+                        date: d,
+                        time: t,
+                        durationMinutes: dur,
+                    }),
+                })
+                    .then(function (r) {
+                        return r.text().then(function (text) {
+                            try {
+                                return JSON.parse(text);
+                            } catch (e) {
+                                return { status: 'error', message: text };
+                            }
+                        });
+                    })
+                    .then(function (data) {
+                        if (data && data.status === 'success') {
+                            setMsg(true, 'Booked. Client confirmation sent. You should get a copy at the studio inbox.');
+                            service.value = '';
+                            apptTime.value = '';
+                        } else if (data && data.message === 'unauthorized') {
+                            setMsg(false, 'Wrong admin secret.');
+                        } else if (data && data.message === 'bad_datetime') {
+                            setMsg(false, 'Check date and time (use a format like 2:30 PM).');
+                        } else {
+                            setMsg(false, (data && data.message) || 'Request failed. Deploy latest Apps Script and try again.');
+                        }
+                    })
+                    .catch(function () {
+                        setMsg(false, 'Network error.');
+                    })
+                    .finally(function () {
+                        btnSubmit.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>

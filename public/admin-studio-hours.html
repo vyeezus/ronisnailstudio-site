@@ -10,6 +10,9 @@
     <style>
         .admin-hours-page { max-width: 520px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
         .admin-hours-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; color: var(--text-main); text-align: center; }
+        .admin-nav { text-align: center; margin-bottom: 1rem; font-size: 0.88rem; }
+        .admin-nav a { color: var(--text-accent); text-decoration: none; font-weight: 500; }
+        .admin-nav a:hover { text-decoration: underline; }
         .admin-hours-page .sub { font-size: 0.88rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; line-height: 1.6; }
         .admin-hours-page .note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: rgba(178, 115, 154, 0.06); border-radius: 10px; line-height: 1.55; }
         .admin-hours-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
@@ -115,6 +118,7 @@
     <main class="container">
         <div class="form-section admin-hours-page">
             <h1>Studio booking hours</h1>
+            <p class="admin-nav"><a href="admin-owner-booking.html">Book a client (admin)</a> · <a href="index.html">Home</a></p>
             <p class="sub">These hours control which days and time ranges appear on the public booking calendar. Saving updates the <strong>StudioHours</strong> tab in your Google Sheet.</p>
             <p class="note">The <strong>Save</strong> button talks to <strong>Google Apps Script</strong>, not only this website. Copy the latest <code>google_apps_script.js</code> from your repo into the Apps Script editor, save, then <strong>Deploy → Manage deployments → Edit → Version: New version → Deploy</strong>. One-time: run <code>setBookingAdminSecret</code> (put your secret in the code, then Run). Optional: <code>seedStudioHoursSheet</code>.</p>
             <div id="msg" class="msg" role="status"></div>

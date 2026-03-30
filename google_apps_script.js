@@ -1129,11 +1129,135 @@ function handleReschedulePost(d) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** Admin page: search Bookings by client name (substring). Dedupes by email (or phone). */
+function handleOwnerClientLookup(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unauthorized' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const q = String(d.query || '')
+    .trim()
+    .toLowerCase();
+  if (q.length < 2) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', matches: [] })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  const seen = Object.create(null);
+  const matches = [];
+  for (let i = data.length - 1; i >= 1; i--) {
+    const name = data[i][1];
+    const phone = data[i][2];
+    const email = data[i][6];
+    const ts = data[i][0];
+    if (name == null || String(name).trim() === '') continue;
+    if (String(name).toLowerCase().indexOf(q) < 0) continue;
+    const em = String(email == null ? '' : email)
+      .trim()
+      .toLowerCase();
+    const ph = String(phone == null ? '' : phone).trim();
+    const key = em || 'p:' + ph;
+    if (key === 'p:' || key === '') continue;
+    if (seen[key]) continue;
+    seen[key] = true;
+    let lastBooked = '';
+    if (ts instanceof Date && !isNaN(ts.getTime())) {
+      lastBooked = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'MMM d, yyyy');
+    }
+    matches.push({
+      name: String(name).trim(),
+      phone: ph,
+      email: String(email || '').trim(),
+      lastBooked: lastBooked,
+    });
+    if (matches.length >= 15) break;
+  }
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', matches: matches })).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Admin page: append CONFIRMED row, create calendar event (not PENDING), send client confirmation + owner note.
+ */
+function handleOwnerDirectBooking(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unauthorized' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const clientName = String(d.clientName || '').trim();
+  const phone = String(d.phone || '').trim();
+  const email = String(d.email || '').trim();
+  const service = String(d.service || '').trim();
+  if (!clientName || !email || !service) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const dateStr = d.date ? String(d.date).split('T')[0].trim() : '';
+  const timeStr = String(d.time || '').trim();
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !timeStr) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const start = new Date(dateStr + 'T' + convertTo24Hour(timeStr));
+  if (isNaN(start.getTime())) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const durMin = clampDurationMinutes_(d.durationMinutes);
+  const end = new Date(start.getTime() + durMin * 60000);
+  const actionToken = generateActionToken();
+  const ss = getCRMSpreadsheet();
+  const s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const row = s.getLastRow() + 1;
+  s.appendRow([new Date(), clientName, phone, service, start, timeStr, email, 'CONFIRMED', '', actionToken, '', '', '', '']);
+  const c = CalendarApp.getCalendarById(CALENDAR_ID);
+  const desc =
+    'Phone: ' +
+    phone +
+    '\nEmail: ' +
+    email +
+    '\nService: ' +
+    service +
+    '\nDurationMinutes: ' +
+    durMin +
+    '\nBooked by: owner (admin page)';
+  const ev = c.createEvent(clientName, start, end, { description: desc });
+  s.getRange(row, 9).setValue(ev.getId());
+  SpreadsheetApp.flush();
+  const tz = Session.getScriptTimeZone();
+  const neatD = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+  const neatTime = Utilities.formatDate(start, tz, 'h:mm a');
+  const acceptEmailHtml = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
+  MailApp.sendEmail({
+    to: email,
+    name: "Roni's Nail Studio",
+    subject: "Appointment Confirmed: Roni's Nail Studio",
+    htmlBody: acceptEmailHtml,
+  });
+  const ownerRows =
+    emailDetailRow('Client', clientName) +
+    emailDetailRow('When', neatD + ' · ' + neatTime) +
+    emailDetailRow('Service', service) +
+    emailDetailRow('Email', email);
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Studio booked (admin): ' + clientName,
+    htmlBody:
+      '<p style="font-family:sans-serif;">You added a confirmed appointment from the admin page.</p><table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fafafa;border-radius:8px;"><tbody>' +
+      ownerRows +
+      '</tbody></table>',
+  });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (d.adminSetWorkHours === true) {
       return handleAdminSetWorkHours(d);
+    }
+    if (d.ownerLookupClient === true) {
+      return handleOwnerClientLookup(d);
+    }
+    if (d.ownerDirectBooking === true) {
+      return handleOwnerDirectBooking(d);
     }
     if (d.ownerProposeAlternate === true) {
       return handleOwnerProposeAlternate(d);
