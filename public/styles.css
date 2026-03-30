@@ -78,6 +78,15 @@ body {
     border-color: rgba(255, 255, 255, 0.35);
 }
 
+/* Keep pink button + visible spinner (avoid :disabled gray before navigate away) */
+.cute-btn.is-navigating {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0.95;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);

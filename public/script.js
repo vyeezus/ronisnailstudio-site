@@ -136,9 +136,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const bookingUrl = `booking.html?services=${encodeURIComponent(squareServices.join(','))}&names=${encodeURIComponent(serviceNames.join(','))}&price=${encodeURIComponent(totalPrice)}&time=${encodeURIComponent(totalTime)}`;
 
-        bookBtn.disabled = true;
-        bookBtn.innerHTML = '<div class="spinner" style="margin:0 auto" aria-hidden="true"></div>';
-        window.location.href = bookingUrl;
+        bookBtn.classList.add('is-navigating');
+        bookBtn.setAttribute('aria-busy', 'true');
+        bookBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+
+        const go = () => {
+            window.location.href = bookingUrl;
+        };
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setTimeout(go, 64);
+            });
+        });
     });
 
     function openModal(e) {

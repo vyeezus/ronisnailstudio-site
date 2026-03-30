@@ -85,8 +85,8 @@
             100% { background-position: -100% 0; }
         }
 
-        /* Mobile: same glass tint as the rest of the site, but skip backdrop-filter here (iOS scroll jank) */
-        @media (max-width: 768px) {
+        /* Drop backdrop-filter on booking for touch + smaller viewports (blur + fixed layers = iOS jank). Large iPad landscape included via (pointer: coarse). */
+        @media (max-width: 1024px), (hover: none) and (pointer: coarse) {
             body.page-booking .form-section {
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
@@ -95,6 +95,14 @@
             body.page-booking .background-overlay {
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
+            }
+            body.page-booking {
+                overscroll-behavior-y: contain;
+            }
+            body.page-booking .booking-page {
+                isolation: isolate;
+                transform: translateZ(0);
+                -webkit-transform: translateZ(0);
             }
         }
 
@@ -455,6 +463,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=mobile_booking_v4"></script>
+    <script src="booking-v3.js?v=mobile_booking_v5"></script>
 </body>
 </html>
