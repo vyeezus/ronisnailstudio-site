@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Studio hours (admin) | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .admin-hours-page { max-width: 520px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .admin-hours-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; color: var(--text-main); text-align: center; }
+        .admin-hours-page .sub { font-size: 0.88rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; line-height: 1.6; }
+        .admin-hours-page .note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: rgba(178, 115, 154, 0.06); border-radius: 10px; line-height: 1.55; }
+        .admin-hours-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
+        .admin-hours-page input[type="password"], .admin-hours-page input[type="text"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 0.75rem; box-sizing: border-box; }
+        .admin-hours-page input:focus { outline: none; border-color: var(--text-accent); }
+        .day-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem 0.75rem; align-items: center; margin-bottom: 0.65rem; padding: 0.65rem 0; border-bottom: 1px solid rgba(178, 115, 154, 0.12); }
+        .day-row .day-name { font-family: var(--font-body); font-size: 0.95rem; color: var(--text-main); }
+        .day-row input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--text-accent); }
+        .day-row select { padding: 0.45rem 0.5rem; border-radius: 8px; border: 1px solid rgba(178, 115, 154, 0.2); font-family: var(--font-body); font-size: 0.9rem; background: rgba(255,255,255,0.7); }
+        .day-row .open-label { font-size: 0.75rem; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 500; }
+        .secret-block { margin-bottom: 1.5rem; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.25rem; }
+        .admin-hours-page .cute-btn { flex: 1; min-width: 140px; border: none; cursor: pointer; font-family: var(--font-body); }
+        .admin-hours-page .cute-btn.secondary { background: rgba(178, 115, 154, 0.15); color: var(--text-main); }
+        .admin-hours-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .remember { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted); }
+        .remember input { width: auto; }
+        .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+        .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
+        .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
+        @media (max-width: 520px) {
+            .day-row { grid-template-columns: 1fr 1fr; }
+            .day-row .day-name { grid-column: 1 / -1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+    <main class="container">
+        <div class="form-section admin-hours-page">
+            <h1>Studio booking hours</h1>
+            <p class="sub">These hours control which days and time ranges appear on the public booking calendar. Saving updates the <strong>StudioHours</strong> tab in your Google Sheet.</p>
+            <p class="note">One-time setup in Google Apps Script: run <code>setBookingAdminSecret</code> (replace the placeholder string with your own secret, then Run). The secret is stored in Script properties, not in this page. Optional: run <code>seedStudioHoursSheet</code> to pre-fill the sheet from the old defaults.</p>
+            <div id="msg" class="msg" role="status"></div>
+            <div class="secret-block">
+                <label for="admin-secret">Admin secret</label>
+                <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
+                <label class="remember">
+                    <input type="checkbox" id="remember-secret">
+                    Remember on this device (session only)
+                </label>
+            </div>
+            <div id="days-wrap"></div>
+            <div class="btn-row">
+                <button type="button" class="cute-btn secondary" id="btn-load">Load current hours</button>
+                <button type="button" class="cute-btn" id="btn-save">Save hours</button>
+            </div>
+        </div>
+    </main>
+    <script>
+        (function () {
+            var PROXY = window.location.origin + '/api/booking';
+            var DIRECT = 'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
+            var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            var STORAGE_KEY = 'booking_admin_secret_session';
+
+            var msg = document.getElementById('msg');
+            var secretInput = document.getElementById('admin-secret');
+            var rememberCb = document.getElementById('remember-secret');
+            var wrap = document.getElementById('days-wrap');
+            var btnLoad = document.getElementById('btn-load');
+            var btnSave = document.getElementById('btn-save');
+
+            function hourOptions(selected) {
+                var opts = '';
+                for (var h = 0; h <= 23; h++) {
+                    var sel = h === selected ? ' selected' : '';
+                    var label = h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM';
+                    opts += '<option value="' + h + '"' + sel + '>' + label + '</option>';
+                }
+                return opts;
+            }
+
+            function endHourOptions(selected) {
+                var opts = '';
+                for (var h = 1; h <= 23; h++) {
+                    var sel = h === selected ? ' selected' : '';
+                    var disp = h === 12 ? '12 PM' : h < 12 ? h + ' AM' : (h - 12) + ' PM';
+                    opts += '<option value="' + h + '"' + sel + '>' + disp + '</option>';
+                }
+                return opts;
+            }
+
+            for (var d = 0; d < 7; d++) {
+                var row = document.createElement('div');
+                row.className = 'day-row';
+                row.innerHTML =
+                    '<span class="day-name">' + DAY_NAMES[d] + '</span>' +
+                    '<label class="open-label"><input type="checkbox" id="open-' + d + '"> Open</label>' +
+                    '<select id="start-' + d + '" aria-label="Start ' + DAY_NAMES[d] + '">' + hourOptions(9) + '</select>' +
+                    '<select id="end-' + d + '" aria-label="End ' + DAY_NAMES[d] + '">' + endHourOptions(17) + '</select>';
+                wrap.appendChild(row);
+            }
+
+            try {
+                var stored = sessionStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    secretInput.value = stored;
+                    rememberCb.checked = true;
+                }
+            } catch (e) { /* ignore */ }
+
+            rememberCb.addEventListener('change', function () {
+                try {
+                    if (!rememberCb.checked) sessionStorage.removeItem(STORAGE_KEY);
+                } catch (e) { /* ignore */ }
+            });
+
+            function setMsg(ok, text) {
+                msg.className = 'msg ' + (ok ? 'ok' : 'err');
+                msg.textContent = text;
+                msg.style.display = 'block';
+            }
+
+            function clearMsg() {
+                msg.className = 'msg';
+                msg.textContent = '';
+                msg.style.display = 'none';
+            }
+
+            function applyPayload(data) {
+                if (!data || typeof data !== 'object') return;
+                for (var d = 0; d < 7; d++) {
+                    var h = data[d] != null ? data[d] : data[String(d)];
+                    var openEl = document.getElementById('open-' + d);
+                    var startEl = document.getElementById('start-' + d);
+                    var endEl = document.getElementById('end-' + d);
+                    if (h && typeof h.start === 'number' && typeof h.end === 'number' && h.start < h.end) {
+                        openEl.checked = true;
+                        startEl.value = String(Math.floor(h.start));
+                        endEl.value = String(Math.floor(h.end));
+                    } else {
+                        openEl.checked = false;
+                    }
+                }
+            }
+
+            function loadHoursJsonp(baseUrl) {
+                return new Promise(function (resolve, reject) {
+                    var cb = '_wh' + Date.now();
+                    var t = setTimeout(function () {
+                        cleanup();
+                        reject(new Error('timeout'));
+                    }, 8000);
+                    function cleanup() {
+                        clearTimeout(t);
+                        try { delete window[cb]; } catch (e) {}
+                        var s = document.getElementById('jsonp-wh');
+                        if (s) s.remove();
+                    }
+                    window[cb] = function (payload) {
+                        cleanup();
+                        resolve(payload);
+                    };
+                    var script = document.createElement('script');
+                    script.id = 'jsonp-wh';
+                    script.src = baseUrl + '?action=work_hours&callback=' + encodeURIComponent(cb);
+                    script.onerror = function () {
+                        cleanup();
+                        reject(new Error('load error'));
+                    };
+                    document.body.appendChild(script);
+                });
+            }
+
+            btnLoad.addEventListener('click', function () {
+                clearMsg();
+                btnLoad.disabled = true;
+                function doneOk(data) {
+                    applyPayload(data);
+                    setMsg(true, 'Loaded hours from the server.');
+                }
+                loadHoursJsonp(PROXY)
+                    .then(doneOk)
+                    .catch(function () {
+                        return loadHoursJsonp(DIRECT).then(doneOk);
+                    })
+                    .catch(function () {
+                        setMsg(false, 'Could not load hours. Check your connection or deploy the latest Apps Script.');
+                    })
+                    .finally(function () {
+                        btnLoad.disabled = false;
+                    });
+            });
+
+            function buildHoursObject() {
+                var hours = {};
+                for (var d = 0; d < 7; d++) {
+                    if (!document.getElementById('open-' + d).checked) continue;
+                    var st = parseInt(document.getElementById('start-' + d).value, 10);
+                    var en = parseInt(document.getElementById('end-' + d).value, 10);
+                    if (isNaN(st) || isNaN(en) || st >= en || st < 0 || en > 23) {
+                        throw new Error('Invalid range for ' + DAY_NAMES[d]);
+                    }
+                    hours[d] = { open: true, start: st, end: en };
+                }
+                return hours;
+            }
+
+            btnSave.addEventListener('click', function () {
+                clearMsg();
+                var secret = secretInput.value.trim();
+                if (!secret) {
+                    setMsg(false, 'Enter your admin secret.');
+                    return;
+                }
+                var hours;
+                try {
+                    hours = buildHoursObject();
+                } catch (e) {
+                    setMsg(false, e.message || 'Check start/end times.');
+                    return;
+                }
+                try {
+                    if (rememberCb.checked) sessionStorage.setItem(STORAGE_KEY, secret);
+                    else sessionStorage.removeItem(STORAGE_KEY);
+                } catch (e) { /* ignore */ }
+
+                btnSave.disabled = true;
+                fetch(PROXY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        adminSetWorkHours: true,
+                        adminSecret: secret,
+                        hours: hours,
+                    }),
+                })
+                    .then(function (r) {
+                        return r.text().then(function (text) {
+                            try {
+                                return JSON.parse(text);
+                            } catch (e) {
+                                return { status: 'error', message: text };
+                            }
+                        });
+                    })
+                    .then(function (data) {
+                        if (data && data.status === 'success') {
+                            setMsg(true, 'Saved. The booking page will pick this up on the next load.');
+                        } else if (data && data.message === 'unauthorized') {
+                            setMsg(false, 'Wrong admin secret.');
+                        } else {
+                            setMsg(false, (data && data.message) || 'Save failed. Deploy Apps Script and try again.');
+                        }
+                    })
+                    .catch(function () {
+                        setMsg(false, 'Network error. Try again.');
+                    })
+                    .finally(function () {
+                        btnSave.disabled = false;
+                    });
+            });
+
+            btnLoad.click();
+        })();
+    </script>
+</body>
+</html>
