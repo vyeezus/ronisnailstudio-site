@@ -107,6 +107,33 @@ function normalizeTimeToken_(t) {
 }
 
 /**
+ * Deleted events often stay in Calendar "trash" but disappear from normal listings.
+ * getEventById() can still return them — so we only trust an event that also appears in getEvents().
+ */
+function getActiveBookingEvent_(calendar, eventId) {
+  let ev = null;
+  try {
+    ev = calendar.getEventById(eventId);
+  } catch (err) {
+    return null;
+  }
+  if (!ev) return null;
+  try {
+    const center = ev.getStartTime();
+    const from = new Date(center.getTime() - 120 * 86400000);
+    const to = new Date(center.getTime() + 120 * 86400000);
+    const listed = calendar.getEvents(from, to);
+    const want = String(eventId);
+    for (let i = 0; i < listed.length; i++) {
+      if (String(listed[i].getId()) === want) return ev;
+    }
+  } catch (err2) {
+    return null;
+  }
+  return null;
+}
+
+/**
  * --- Calendar → Sheet sync ---
  * - You moved the event: sheet + client “time updated” email.
  * - You deleted the event: sheet → CANCELLED, client gets cancellation email (uses row date/time/service).
@@ -126,12 +153,7 @@ function syncCalendarToSpreadsheet() {
       eventId &&
       String(eventId).indexOf('pending') < 0
     ) {
-      let event = null;
-      try {
-        event = calendar.getEventById(eventId);
-      } catch (err) {
-        event = null;
-      }
+      const event = getActiveBookingEvent_(calendar, eventId);
       if (!event) {
         const clientName = data[i][1];
         const clientEmail = data[i][6];
@@ -149,6 +171,9 @@ function syncCalendarToSpreadsheet() {
             subject: "Appointment Cancelled: Roni's Nail Studio",
             htmlBody: html,
           });
+          Logger.log('syncCalendarToSpreadsheet: cancellation email sent for row ' + (i + 1) + ' eventId=' + eventId);
+        } else {
+          Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' event missing but no client email — no email sent');
         }
         continue;
       }
