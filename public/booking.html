@@ -93,6 +93,25 @@
         #booking-flow {
             contain: layout;
         }
+        /* Booking only: fill dynamic viewport on iOS Chrome (toolbar strip). Home uses global 100vh layers. */
+        html.page-booking {
+            background-color: #fdf5f9;
+            min-height: 100%;
+        }
+        html.page-booking body.page-booking {
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+        html.page-booking .background-texture,
+        html.page-booking .background-overlay {
+            inset: 0;
+            top: 0;
+            left: 0;
+            width: auto;
+            height: auto;
+            min-height: 100%;
+            min-height: 100dvh;
+        }
         .cal-header {
             display: flex;
             justify-content: space-between;
