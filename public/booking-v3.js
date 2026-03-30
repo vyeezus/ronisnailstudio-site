@@ -14,12 +14,86 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCRIPT_DIRECT =
         'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
 
-    const WORK_HOURS = {
+    const DEFAULT_WORK_HOURS = {
         1: { start: 11, end: 18 },
         2: { start: 11, end: 18 },
         3: { start: 9, end: 16 },
         5: { start: 9, end: 16 },
     };
+    let workHours = { ...DEFAULT_WORK_HOURS };
+
+    function dayHours(dayOfWeek) {
+        return workHours[dayOfWeek] || workHours[String(dayOfWeek)];
+    }
+
+    function mergeWorkHoursFromPayload(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+        const next = {};
+        for (const k of Object.keys(data)) {
+            const d = parseInt(k, 10);
+            if (isNaN(d) || d < 0 || d > 6) continue;
+            const h = data[k];
+            const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
+            const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
+            if (!isFinite(st) || !isFinite(en)) continue;
+            const start = Math.floor(st);
+            const end = Math.floor(en);
+            if (start < 0 || end > 24 || start >= end) continue;
+            next[d] = { start, end };
+        }
+        if (Object.keys(next).length > 0) workHours = next;
+    }
+
+    function loadWorkHoursJsonp(baseUrl) {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'workHours_' + Date.now();
+            const timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error('work hours jsonp timeout'));
+            }, 8000);
+
+            function cleanup() {
+                clearTimeout(timeoutId);
+                try {
+                    delete window[callbackName];
+                } catch (e) { /* ignore */ }
+                const tag = document.getElementById('jsonp-work-hours');
+                if (tag) tag.remove();
+            }
+
+            window[callbackName] = function (payload) {
+                mergeWorkHoursFromPayload(payload);
+                cleanup();
+                resolve();
+            };
+
+            const qs = new URLSearchParams({
+                callback: callbackName,
+                action: 'work_hours',
+            });
+            const script = document.createElement('script');
+            script.id = 'jsonp-work-hours';
+            script.src = `${baseUrl}?${qs.toString()}`;
+            script.onerror = () => {
+                cleanup();
+                reject(new Error('work hours jsonp load error'));
+            };
+            document.body.appendChild(script);
+        });
+    }
+
+    async function loadWorkHours() {
+        try {
+            await loadWorkHoursJsonp(SCRIPT_PROXY);
+        } catch (e) {
+            console.warn('Proxy /api/booking failed; loading work hours from Google directly.', e);
+            try {
+                await loadWorkHoursJsonp(SCRIPT_DIRECT);
+            } catch (e2) {
+                console.error('Work hours JSONP failed entirely.', e2);
+            }
+        }
+    }
 
     let serviceMinutes = 60;
     if (timeStr) {
@@ -164,7 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const GAP_THRESHOLD = 60;
 
     function isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr) {
-        const hours = WORK_HOURS[dayOfWeek];
+        const hours = dayHours(dayOfWeek);
+        if (!hours) return false;
         const workStart = new Date(`${dateStr}T${String(hours.start).padStart(2, '0')}:00:00`);
         const workEnd = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
 
@@ -194,7 +269,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function hasAnyAvailableSlot(dateStr, dayOfWeek) {
-        const hours = WORK_HOURS[dayOfWeek];
+        const hours = dayHours(dayOfWeek);
+        if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
             for (const m of [0, 30]) {
                 const slotStart = new Date(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
@@ -210,9 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const isOverClosing = slotEnd > closingDateTime;
 
                 if (!isConflict && !isOverClosing) {
-                    if (isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr)) {
-                        return true;
-                    }
+                    return true;
                 }
             }
         }
@@ -249,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (dateObj < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
                 btn.classList.add('past');
-            } else if (!WORK_HOURS[dayOfWeek]) {
+            } else if (!dayHours(dayOfWeek)) {
                 btn.classList.add('unavailable');
             } else {
                 if (!hasAnyAvailableSlot(dateStr, dayOfWeek)) {
@@ -302,7 +376,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const grid = document.createElement('div');
         grid.className = 'slots-grid';
 
-        const hours = WORK_HOURS[dayOfWeek];
+        const hours = dayHours(dayOfWeek);
+        if (!hours) {
+            slotsContainer.innerHTML = '';
+            return;
+        }
         for (let h = hours.start; h < hours.end; h++) {
             for (const m of [0, 30]) {
                 const timeStr12 = format12h(h, m);
@@ -323,12 +401,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 pill.className = 'slot-pill';
                 pill.textContent = timeStr12;
 
-                if (isConflict || isOverClosing || !isOptimal) {
+                if (isConflict || isOverClosing) {
                     pill.classList.add('busy');
                     pill.style.textDecoration = 'line-through';
                     pill.style.opacity = '0.35';
                     pill.disabled = true;
                 } else {
+                    if (!isOptimal) {
+                        pill.classList.add('slot-pill-suboptimal');
+                        pill.style.opacity = '0.72';
+                    }
                     pill.addEventListener('click', () => {
                         selectedSlot = timeStr12;
                         document.querySelectorAll('.slot-pill.selected').forEach(p => p.classList.remove('selected'));
@@ -494,6 +576,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         populateServiceTags(serviceNames);
+
+        await loadWorkHours();
 
         if (priceStr && timeStr && !isReschedule) {
             const summaryInfo = document.createElement('div');

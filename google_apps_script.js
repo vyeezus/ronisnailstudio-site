@@ -6,6 +6,8 @@
 const CALENDAR_ID = 'f9c38dc209bf435115238aba24b24be51b7e4e2f05f3e3f9c08b9077a78c33b3@group.calendar.google.com';
 const PERSONAL_CALENDAR_ID = 'nguyenveronica0108@gmail.com'; 
 const SHEET_NAME = 'Bookings';
+/** Optional tab: columns day (0–6 Sun–Sat), start, end (integers). If missing, booking uses script defaults. */
+const HOURS_SHEET_NAME = 'StudioHours';
 const PENDING_COLOR = '5'; // Yellow
 const MY_EMAIL = 'ronisnailstudio@gmail.com';
 const SPREADSHEET_ID = '16IJ_aJlAXWrF6UpM_g4Oia8rGGyAcmeR898STRX_5tc'; 
@@ -271,10 +273,108 @@ function tokenMatches(stored, provided) {
   return String(stored).trim() === String(provided).trim();
 }
 
+function defaultWorkHoursObject_() {
+  return { '1': { start: 11, end: 18 }, '2': { start: 11, end: 18 }, '3': { start: 9, end: 16 }, '5': { start: 9, end: 16 } };
+}
+
+function getWorkHoursObjectFromSheet_() {
+  try {
+    const ss = getCRMSpreadsheet();
+    const sh = ss.getSheetByName(HOURS_SHEET_NAME);
+    if (!sh) return null;
+    const data = sh.getDataRange().getValues();
+    if (data.length < 2) return null;
+    const out = {};
+    for (let i = 1; i < data.length; i++) {
+      const rawD = data[i][0];
+      if (rawD === '' || rawD === null || rawD === undefined) continue;
+      if (typeof rawD === 'object') continue;
+      const d = parseInt(String(rawD), 10);
+      const st = Number(data[i][1]);
+      const en = Number(data[i][2]);
+      if (isNaN(d) || d < 0 || d > 6) continue;
+      if (!isFinite(st) || !isFinite(en) || st !== Math.floor(st) || en !== Math.floor(en)) continue;
+      if (st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
+      out[String(d)] = { start: st, end: en };
+    }
+    return Object.keys(out).length ? out : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function getWorkHoursPayload_() {
+  const fromSheet = getWorkHoursObjectFromSheet_();
+  if (fromSheet) return fromSheet;
+  return defaultWorkHoursObject_();
+}
+
+function handleAdminSetWorkHours(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unauthorized' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!d.hours || typeof d.hours !== 'object' || Array.isArray(d.hours)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_hours' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(HOURS_SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(HOURS_SHEET_NAME);
+  sh.clear();
+  sh.appendRow(['day', 'start', 'end']);
+  const rows = [];
+  for (let day = 0; day <= 6; day++) {
+    const h = d.hours[day] !== undefined && d.hours[day] !== null ? d.hours[day] : d.hours[String(day)];
+    if (!h || h.open !== true) continue;
+    const st = Math.floor(Number(h.start));
+    const en = Math.floor(Number(h.end));
+    if (!isFinite(st) || !isFinite(en) || st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
+    rows.push([day, st, en]);
+  }
+  if (rows.length > 0) {
+    sh.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+  SpreadsheetApp.flush();
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Run once in the editor: replace the string with a long random secret, then Run. Do not commit the real secret. */
+function setBookingAdminSecret() {
+  PropertiesService.getScriptProperties().setProperty('BOOKING_ADMIN_SECRET', 'REPLACE_WITH_LONG_RANDOM_SECRET');
+}
+
+/** Optional: create StudioHours rows from the same defaults as the booking page (before first save from the admin page). */
+function seedStudioHoursSheet() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(HOURS_SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(HOURS_SHEET_NAME);
+  sh.clear();
+  sh.appendRow(['day', 'start', 'end']);
+  const def = defaultWorkHoursObject_();
+  const rows = [];
+  Object.keys(def).forEach(function (k) {
+    rows.push([parseInt(k, 10), def[k].start, def[k].end]);
+  });
+  rows.sort(function (a, b) {
+    return a[0] - b[0];
+  });
+  if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
+}
+
 function doGet(e) {
   const action = e.parameter.action;
   const eventId = e.parameter.eventId;
   const token = e.parameter.token;
+
+  if (action === 'work_hours') {
+    const callback = e.parameter.callback;
+    const payload = getWorkHoursPayload_();
+    const json = JSON.stringify(payload);
+    if (callback) {
+      return ContentService.createTextOutput(callback + '(' + json + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
 
   if (action === 'accept' || action === 'reject') {
     if (!eventId || !token) {
@@ -772,6 +872,9 @@ function handleReschedulePost(d) {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.adminSetWorkHours === true) {
+      return handleAdminSetWorkHours(d);
+    }
     if (d.ownerProposeAlternate === true) {
       return handleOwnerProposeAlternate(d);
     }
@@ -807,7 +910,10 @@ function doPost(e) {
     MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
     
     return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
-  } catch (err) { return ContentService.createTextOutput(JSON.stringify({ status: 'error' })); }
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : 'server_error';
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: msg })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 /**

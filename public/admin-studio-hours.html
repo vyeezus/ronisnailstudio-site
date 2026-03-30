@@ -48,7 +48,7 @@
         <div class="form-section admin-hours-page">
             <h1>Studio booking hours</h1>
             <p class="sub">These hours control which days and time ranges appear on the public booking calendar. Saving updates the <strong>StudioHours</strong> tab in your Google Sheet.</p>
-            <p class="note">One-time setup in Google Apps Script: run <code>setBookingAdminSecret</code> (replace the placeholder string with your own secret, then Run). The secret is stored in Script properties, not in this page. Optional: run <code>seedStudioHoursSheet</code> to pre-fill the sheet from the old defaults.</p>
+            <p class="note">The <strong>Save</strong> button talks to <strong>Google Apps Script</strong>, not only this website. Copy the latest <code>google_apps_script.js</code> from your repo into the Apps Script editor, save, then <strong>Deploy → Manage deployments → Edit → Version: New version → Deploy</strong>. One-time: run <code>setBookingAdminSecret</code> (put your secret in the code, then Run). Optional: <code>seedStudioHoursSheet</code>.</p>
             <div id="msg" class="msg" role="status"></div>
             <div class="secret-block">
                 <label for="admin-secret">Admin secret</label>
@@ -259,7 +259,12 @@
                         } else if (data && data.message === 'unauthorized') {
                             setMsg(false, 'Wrong admin secret.');
                         } else {
-                            setMsg(false, (data && data.message) || 'Save failed. Deploy Apps Script and try again.');
+                            var m = data && data.message;
+                            if (typeof m === 'string' && /^\s*</.test(m)) {
+                                setMsg(false, 'Google returned a web page instead of JSON. Open Apps Script → Deploy → Manage deployments → your Web app → Edit → choose “New version” → Deploy. Make sure this project’s code includes Save hours (adminSetWorkHours) in doPost.');
+                            } else {
+                                setMsg(false, (m && m.length < 500 ? m : m ? m.slice(0, 500) + '…' : '') || 'Save failed. Paste the latest google_apps_script.js into your Apps Script project, deploy a new version, and try again.');
+                            }
                         }
                     })
                     .catch(function () {
