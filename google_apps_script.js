@@ -107,11 +107,10 @@ function normalizeTimeToken_(t) {
 }
 
 /**
- * --- Calendar → Sheet sync (drag/drop in Google Calendar) ---
- * If the event start in your studio calendar no longer matches columns E–F, updates the sheet,
- * clears the 2-day reminder flag (K), and emails the client.
- *
- * Automatic runs: run installCalendarSyncTrigger() once in the editor (every 10 minutes).
+ * --- Calendar → Sheet sync ---
+ * - You moved the event: sheet + client “time updated” email.
+ * - You deleted the event: sheet → CANCELLED, client gets cancellation email (uses row date/time/service).
+ * Run installCalendarSyncTrigger() so this checks about every 10 minutes.
  */
 function syncCalendarToSpreadsheet() {
   const tz = Session.getScriptTimeZone();
@@ -127,17 +126,29 @@ function syncCalendarToSpreadsheet() {
       eventId &&
       String(eventId).indexOf('pending') < 0
     ) {
-      const event = calendar.getEventById(eventId);
+      let event = null;
+      try {
+        event = calendar.getEventById(eventId);
+      } catch (err) {
+        event = null;
+      }
       if (!event) {
+        const clientName = data[i][1];
+        const clientEmail = data[i][6];
+        const service = data[i][3];
+        const neatD = formatSheetDateForEmail(data[i][4]);
+        const neatTime = formatSheetTimeForEmail(data[i][5]);
         sheet.getRange(i + 1, 8).setValue('CANCELLED');
-        const email = data[i][6];
-        if (email) {
-          const cn = escapeHtml(data[i][1]);
-          const body =
-            '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px;"><h2 style="color: #1a1a1a; text-align: center; font-weight: 500;">Appointment Cancelled</h2><p style="text-align: center;">Hello ' +
-            cn +
-            ", your appointment at Roni's Nail Studio has been cancelled.</p></div>";
-          MailApp.sendEmail({ to: email, name: "Roni's Nail Studio", subject: "Appointment Cancelled: Roni's Nail Studio", htmlBody: body });
+        sheet.getRange(i + 1, 11).setValue('');
+        SpreadsheetApp.flush();
+        if (clientEmail) {
+          const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
+          MailApp.sendEmail({
+            to: clientEmail,
+            name: "Roni's Nail Studio",
+            subject: "Appointment Cancelled: Roni's Nail Studio",
+            htmlBody: html,
+          });
         }
         continue;
       }
@@ -564,6 +575,26 @@ function getCalendarUpdatedClientEmailHtml(name, date, time, service) {
     rows +
     '</tbody></table>' +
     '<p style="font-size: 15px; color: #555; line-height: 1.6;">If this doesn\'t work for you, reply to this email or use the reschedule link in your reminder when you receive it.</p>' +
+    '<hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">' +
+    '<p style="font-size: 13px; color: #999; text-align: center;">Roni\'s Nail Studio</p>' +
+    '</div>'
+  );
+}
+
+/** Client email when the calendar event was removed (you deleted it); syncCalendarToSpreadsheet. */
+function getCalendarDeletedClientEmailHtml(name, date, time, service) {
+  const n = escapeHtml(name);
+  const rows = emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service);
+  return (
+    '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ' +
+    n +
+    ',</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Your appointment below is <strong>no longer on the schedule</strong> and has been cancelled.</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 24px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
+    rows +
+    '</tbody></table>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">If you have questions or would like to book another time, please reach out or use our website.</p>' +
     '<hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">' +
     '<p style="font-size: 13px; color: #999; text-align: center;">Roni\'s Nail Studio</p>' +
     '</div>'
