@@ -144,9 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.href = bookingUrl;
         };
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                setTimeout(go, 64);
-            });
+            requestAnimationFrame(go);
         });
     });
 

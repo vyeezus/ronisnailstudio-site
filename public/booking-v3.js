@@ -366,11 +366,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
+        slotsSection.style.transition = 'none';
+        slotsSection.style.opacity = '0';
         const dateObj = new Date(dateStr + 'T12:00:00');
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
         requestAnimationFrame(() => {
             renderTimeSlots(dateStr, dayOfWeek);
+            requestAnimationFrame(() => {
+                slotsSection.style.transition = 'opacity 0.2s ease-out';
+                slotsSection.style.opacity = '1';
+            });
         });
     }
 
@@ -437,15 +443,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function showCustomerSection() {
         document.getElementById('slot-preview').innerHTML = `Selected: <strong>${slotsDateLabel.textContent} @ ${selectedSlot}</strong>`;
         customerSection.style.display = 'block';
-        const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-        customerSection.scrollIntoView({
-            behavior: coarse ? 'instant' : 'smooth',
-            block: 'nearest',
-        });
         updateConfirmBtn();
     }
 
     function updateConfirmBtn() {
+        if (confirmBtn.classList.contains('is-submitting')) return;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         const phoneRegex = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/im;
 
@@ -463,12 +465,17 @@ document.addEventListener('DOMContentLoaded', () => {
     phoneInput.addEventListener('input', updateConfirmBtn);
     emailInput.addEventListener('input', updateConfirmBtn);
 
+    let bookingSubmitInFlight = false;
+
     confirmBtn.addEventListener('click', async () => {
+        if (bookingSubmitInFlight) return;
         if (!selectedSlot || !nameInput.value.trim()) return;
 
-        confirmBtn.disabled = true;
+        bookingSubmitInFlight = true;
         const originalBtnText = confirmBtn.innerHTML;
-        confirmBtn.innerHTML = '<div class="spinner" style="margin: 0 auto;"></div>';
+        confirmBtn.classList.add('is-submitting');
+        confirmBtn.setAttribute('aria-busy', 'true');
+        confirmBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
         bookError.innerHTML = '';
 
         const bookingData = isReschedule
@@ -519,8 +526,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         } catch (err) {
             bookError.innerHTML = '<div class="booking-error">Submission failed. Please try again.</div>';
+            confirmBtn.classList.remove('is-submitting');
+            confirmBtn.removeAttribute('aria-busy');
             confirmBtn.innerHTML = originalBtnText;
-            confirmBtn.disabled = false;
+            bookingSubmitInFlight = false;
+            updateConfirmBtn();
         }
     });
 

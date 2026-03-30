@@ -62,32 +62,62 @@ body {
     z-index: -1;
 }
 
-/* Inline loading (home “Select Time Slot”, booking “Submit”) */
+/* Spinner: ring on ::before, rotation on the box (Chrome is flaky animating border+transform on one element). */
 .spinner {
+    display: inline-block;
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
+    vertical-align: middle;
+    position: relative;
+    box-sizing: border-box;
+    -webkit-animation: booking-spin 0.65s linear infinite;
+    animation: booking-spin 0.65s linear infinite;
+}
+
+.spinner::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
     border: 2px solid rgba(178, 115, 154, 0.25);
     border-top-color: var(--text-accent);
     border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    flex-shrink: 0;
 }
 
-.cute-btn .spinner {
-    border-top-color: rgba(255, 255, 255, 0.95);
+.cute-btn .spinner::before {
     border-color: rgba(255, 255, 255, 0.35);
+    border-top-color: rgba(255, 255, 255, 0.95);
 }
 
-/* Keep pink button + visible spinner (avoid :disabled gray before navigate away) */
-.cute-btn.is-navigating {
+.cute-btn.is-navigating,
+.cute-btn.is-submitting {
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
+}
+
+.cute-btn.is-navigating {
     opacity: 0.95;
 }
 
-@keyframes spin {
+@-webkit-keyframes booking-spin {
+    from {
+        -webkit-transform: rotate(0deg);
+    }
+    to {
+        -webkit-transform: rotate(360deg);
+    }
+}
+
+@keyframes booking-spin {
+    from {
+        transform: rotate(0deg);
+    }
     to {
         transform: rotate(360deg);
     }
@@ -480,7 +510,7 @@ hr {
     border: none;
     border-radius: 8px; /* Cute but professional */
     cursor: pointer;
-    transition: all 0.3s;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease, transform 0.3s ease, color 0.3s ease;
     text-transform: uppercase;
     letter-spacing: 2px;
 }
