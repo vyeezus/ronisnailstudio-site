@@ -317,6 +317,18 @@ function doGet(e) {
     if (action === 'client_confirm') {
       sheet.getRange(rowIndex, 8).setValue('CLIENT_CONFIRMED');
       SpreadsheetApp.flush();
+      const neatD = formatSheetDateForEmail(dateVal);
+      const neatTime = formatSheetTimeForEmail(timeStr);
+      const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
+      const ownerBody =
+        '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client confirmed (2-day reminder)</h2><p><strong>' +
+        escapeHtml(clientName) +
+        '</strong> tapped <strong>Confirm</strong> on their reminder email.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' +
+        ownerRows +
+        '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' +
+        escapeHtml(clientEmail || '—') +
+        '</p></div>';
+      MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client confirmed appointment: ' + clientName, htmlBody: ownerBody });
       return htmlPage('Thank you', '<h2>Thank you!</h2><p>Your appointment is confirmed. We\'ll see you soon.</p>');
     }
     if (action === 'client_cancel') {
