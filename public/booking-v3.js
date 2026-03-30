@@ -354,6 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function selectDate(dateStr, btnEl, dayOfWeek) {
+        const ae = document.activeElement;
+        if (ae && typeof ae.blur === 'function') ae.blur();
+
         selectedDate = dateStr;
         selectedSlot = null;
         customerSection.style.display = 'none';
@@ -366,7 +369,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const dateObj = new Date(dateStr + 'T12:00:00');
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-        renderTimeSlots(dateStr, dayOfWeek);
+        requestAnimationFrame(() => {
+            renderTimeSlots(dateStr, dayOfWeek);
+        });
     }
 
     function renderTimeSlots(dateStr, dayOfWeek) {

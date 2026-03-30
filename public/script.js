@@ -134,8 +134,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalPrice = totalPriceEl.innerText;
         const totalTime = totalTimeEl.innerText;
 
-        // Navigate to booking.html with the correct service data in the SAME window
         const bookingUrl = `booking.html?services=${encodeURIComponent(squareServices.join(','))}&names=${encodeURIComponent(serviceNames.join(','))}&price=${encodeURIComponent(totalPrice)}&time=${encodeURIComponent(totalTime)}`;
+
+        bookBtn.disabled = true;
+        let overlay = document.getElementById('booking-nav-loading');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'booking-nav-loading';
+            overlay.className = 'booking-nav-loading';
+            overlay.setAttribute('role', 'status');
+            overlay.setAttribute('aria-live', 'polite');
+            overlay.innerHTML =
+                '<div class="nav-load-spinner" aria-hidden="true"></div><p class="booking-nav-loading-text">Opening calendar…</p>';
+            document.body.appendChild(overlay);
+        } else {
+            overlay.hidden = false;
+        }
+
         window.location.href = bookingUrl;
     });
 

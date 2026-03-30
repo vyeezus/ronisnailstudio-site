@@ -85,22 +85,6 @@
             100% { background-position: -100% 0; }
         }
 
-        /* Mobile: backdrop-filter repaints badly while scrolling (iOS); keep glass look with solid fill */
-        @media (max-width: 768px) {
-            body.page-booking .form-section {
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                background: rgba(255, 255, 255, 0.88);
-            }
-            body.page-booking .background-overlay {
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-            }
-            body.page-booking {
-                overscroll-behavior-y: none;
-            }
-        }
-
         .cal-header {
             display: flex;
             justify-content: space-between;
@@ -196,8 +180,13 @@
             border: 1px solid var(--text-accent);
         }
 
-        /* Time Slots */
-        .slots-section { margin-bottom: 2.5rem; }
+        /* Time Slots — isolate layout when panel opens (reduces iOS scroll jump) */
+        .slots-section {
+            margin-bottom: 2.5rem;
+            overflow-anchor: none;
+            contain: layout style;
+        }
+        #slots-container { contain: layout; }
 
         .slots-label {
             font-family: var(--font-heading);
@@ -463,6 +452,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=mobile_booking_v2"></script>
+    <script src="booking-v3.js?v=mobile_booking_v3"></script>
 </body>
 </html>

@@ -62,6 +62,42 @@ body {
     z-index: -1;
 }
 
+/* Full-screen handoff while navigating index → booking (covers slow load / white flash) */
+.booking-nav-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    background: rgba(253, 245, 249, 0.94);
+    font-family: var(--font-body);
+}
+
+.booking-nav-loading-text {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+}
+
+.nav-load-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(178, 115, 154, 0.2);
+    border-top-color: var(--text-accent);
+    border-radius: 50%;
+    animation: nav-load-spin 0.65s linear infinite;
+}
+
+@keyframes nav-load-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* High-End Empty Hero */
 .hero {
     text-align: center;
