@@ -252,21 +252,148 @@ function doGet(e) {
       return htmlPage('Cancelled', '<h2>Appointment cancelled</h2><p>We\'ve sent a confirmation to your email.</p>');
     }
   }
+
+  if (action === 'reschedule_meta') {
+    const eventId = e.parameter.eventId;
+    const token = e.parameter.token;
+    const callback = e.parameter.callback;
+    function wrapRescheduleMeta_(obj) {
+      const json = JSON.stringify(obj);
+      if (callback) {
+        return ContentService.createTextOutput(callback + '(' + json + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+      }
+      return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (!eventId || !token) {
+      return wrapRescheduleMeta_({ ok: false, error: 'missing_params' });
+    }
+    const ss = getCRMSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    let found = null;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8]) !== String(eventId)) continue;
+      if (!tokenMatches(data[i][9], token)) {
+        return wrapRescheduleMeta_({ ok: false, error: 'invalid_token' });
+      }
+      found = { row: i + 1, status: data[i][7], service: data[i][3], clientName: data[i][1], phone: data[i][2], email: data[i][6] };
+      break;
+    }
+    if (!found) {
+      return wrapRescheduleMeta_({ ok: false, error: 'not_found' });
+    }
+    if (found.status !== 'CONFIRMED' && found.status !== 'CLIENT_CONFIRMED') {
+      return wrapRescheduleMeta_({ ok: false, error: 'not_confirmed' });
+    }
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    let ev;
+    try {
+      ev = calendar.getEventById(eventId);
+    } catch (err) {
+      ev = null;
+    }
+    if (!ev) {
+      return wrapRescheduleMeta_({ ok: false, error: 'event_missing' });
+    }
+    const durMs = ev.getEndTime().getTime() - ev.getStartTime().getTime();
+    const durationMinutes = Math.max(30, Math.round(durMs / 60000));
+    return wrapRescheduleMeta_({
+      ok: true,
+      service: found.service,
+      clientName: found.clientName,
+      phone: found.phone,
+      email: found.email,
+      durationMinutes: durationMinutes,
+    });
+  }
+
   if (!action) {
-    const busCal = CalendarApp.getCalendarById(CALENDAR_ID); const perCal = CalendarApp.getCalendarById(PERSONAL_CALENDAR_ID);
-    const now = new Date(); const three = new Date(); three.setMonth(now.getMonth() + 3);
-    let allBusy = [];
-    if (busCal) busCal.getEvents(now, three).forEach(v => allBusy.push({ start: v.getStartTime().toISOString(), end: v.getEndTime().toISOString() }));
-    if (perCal) perCal.getEvents(now, three).forEach(v => allBusy.push({ start: v.getStartTime().toISOString(), end: v.getEndTime().toISOString() }));
+    const busCal = CalendarApp.getCalendarById(CALENDAR_ID);
+    const perCal = CalendarApp.getCalendarById(PERSONAL_CALENDAR_ID);
+    const now = new Date();
+    const three = new Date();
+    three.setMonth(now.getMonth() + 3);
+    const ignoreEventId = e.parameter.ignoreEventId ? String(e.parameter.ignoreEventId) : '';
+    const allBusy = [];
+    function pushBusy_(cal) {
+      if (!cal) return;
+      cal.getEvents(now, three).forEach(function (v) {
+        if (ignoreEventId && String(v.getId()) === ignoreEventId) return;
+        allBusy.push({ start: v.getStartTime().toISOString(), end: v.getEndTime().toISOString() });
+      });
+    }
+    pushBusy_(busCal);
+    pushBusy_(perCal);
     const json = JSON.stringify(allBusy);
     return ContentService.createTextOutput(e.parameter.callback ? e.parameter.callback + '(' + json + ')' : json).setMimeType(e.parameter.callback ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON);
   }
   return htmlPage('Bad request', '<h2>Bad request</h2>');
 }
 
+function handleReschedulePost(d) {
+  if (!d.eventId || !d.token || !d.date || !d.time) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  let clientName = '';
+  let clientEmail = '';
+  let phone = '';
+  let service = '';
+  let rowStatus = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][8]) !== String(d.eventId)) continue;
+    if (!tokenMatches(data[i][9], d.token)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_token' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    rowIndex = i + 1;
+    clientName = data[i][1];
+    phone = data[i][2];
+    service = data[i][3];
+    clientEmail = data[i][6];
+    rowStatus = data[i][7];
+    break;
+  }
+  if (rowIndex < 0) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'not_found' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (rowStatus !== 'CONFIRMED' && rowStatus !== 'CLIENT_CONFIRMED') {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'not_confirmed' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  const ev = cal.getEventById(d.eventId);
+  if (!ev) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'event_missing' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const durMs = ev.getEndTime().getTime() - ev.getStartTime().getTime();
+  const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
+  const newEnd = new Date(start.getTime() + durMs);
+  ev.setTime(start, newEnd);
+  ev.setTitle(clientName);
+  sheet.getRange(rowIndex, 5).setValue(start);
+  const neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
+  sheet.getRange(rowIndex, 6).setValue(neatTimeStr);
+  sheet.getRange(rowIndex, 11).setValue('');
+  SpreadsheetApp.flush();
+  const neatDate = Utilities.formatDate(start, Session.getScriptTimeZone(), 'EEEE, MMMM d, yyyy');
+  const clientHtml = getRescheduledClientEmailHtml(clientName, neatDate, neatTimeStr, service);
+  if (clientEmail) {
+    MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Appointment rescheduled — Roni's Nail Studio", htmlBody: clientHtml });
+  }
+  const ownerRows = emailDetailRow('Client', clientName) + emailDetailRow('Date', neatDate) + emailDetailRow('Time', neatTimeStr) + emailDetailRow('Service', service);
+  const ownerBody = '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Appointment rescheduled</h2><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' + ownerRows + '</tbody></table><p style="margin-top:16px;color:#666;">' + escapeHtml(clientEmail || '') + '</p></div>';
+  MailApp.sendEmail({ to: MY_EMAIL, subject: 'Rescheduled: ' + clientName, htmlBody: ownerBody });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.reschedule === true) {
+      return handleReschedulePost(d);
+    }
     const actionToken = generateActionToken();
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     const row = s.getLastRow() + 1;
@@ -305,6 +432,25 @@ function getConfirmedEmailHtml(name, date, time, service) {
       <hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">
       <p style="font-size: 13px; color: #999; text-align: center;">Roni's Nail Studio</p>
     </div>`;
+}
+
+function getRescheduledClientEmailHtml(name, date, time, service) {
+  const n = escapeHtml(name);
+  const rows = emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service);
+  return (
+    '<div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ' +
+    n +
+    ',</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Your appointment has been <strong>rescheduled</strong>. Here are your updated details:</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 24px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
+    rows +
+    '</tbody></table>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">We look forward to seeing you.</p>' +
+    '<hr style="border: none; border-top: 1px solid #f0f0f0; margin: 40px 0;">' +
+    '<p style="font-size: 13px; color: #999; text-align: center;">Roni\'s Nail Studio</p>' +
+    '</div>'
+  );
 }
 
 function getDeclinedEmailHtml(name, date, time, service) {

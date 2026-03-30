@@ -1,71 +1,47 @@
-// --- Roni's Nail Studio — Custom Booking Calendar (V2 - FIX - Final Sync) ---
+// --- Roni's Nail Studio — Custom Booking Calendar (reschedule + new booking) ---
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Parse URL params
     const params = new URLSearchParams(window.location.search);
-    const serviceNames = params.get('names');
-    const serviceIds = params.get('services');
+    let serviceNames = params.get('names');
+    let serviceIds = params.get('services');
     const priceStr = params.get('price');
-    const timeStr = params.get('time');
-    /** Netlify proxy (needs `public/_redirects` + functions). Falls back to Google for calendar JSONP if /api/booking 404s. */
+    let timeStr = params.get('time');
+    const isReschedule = params.get('reschedule') === '1';
+    const rescheduleEventId = params.get('eventId');
+    const rescheduleToken = params.get('token');
+
     const SCRIPT_PROXY = `${window.location.origin}/api/booking`;
     const SCRIPT_DIRECT =
         'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
-    
-    // Roni's Working Hours
+
     const WORK_HOURS = {
-        1: { start: 11, end: 18 }, // Monday: 11am-6pm
-        2: { start: 11, end: 18 }, // Tuesday: 11am-6pm
-        3: { start: 9, end: 16 }, // Wednesday: 9am-4pm
-        5: { start: 9, end: 16 }  // Friday: 9am-4pm
+        1: { start: 11, end: 18 },
+        2: { start: 11, end: 18 },
+        3: { start: 9, end: 16 },
+        5: { start: 9, end: 16 },
     };
 
-    // Calculate Service Duration in Minutes - Much more aggressive regex
     let serviceMinutes = 60;
-    console.log('Original Time String:', timeStr);
     if (timeStr) {
         const decodedTime = decodeURIComponent(timeStr).toLowerCase();
-        console.log('Decoded Time:', decodedTime);
-
-        // This looks for any number followed by 'h', then any number followed by 'm'
         const hMatch = decodedTime.match(/(\d+)\s*h/);
         const mMatch = decodedTime.match(/(\d+)\s*m/);
-
         let total = 0;
-        if (hMatch) total += parseInt(hMatch[1]) * 60;
-        if (mMatch) total += parseInt(mMatch[1]);
+        if (hMatch) total += parseInt(hMatch[1], 10) * 60;
+        if (mMatch) total += parseInt(mMatch[1], 10);
         if (total > 0) serviceMinutes = total;
     }
-    console.log('Calculated Service Duration (min):', serviceMinutes);
 
-    if (!serviceIds) {
-        document.getElementById('booking-flow').innerHTML =
-            '<p style="font-style:italic;color:var(--text-muted); text-align:center; padding: 2rem;">No services selected. <a href="index.html">Go back</a> and choose your services first.</p>';
-        return;
-    }
-
+    const bookingFlow = document.getElementById('booking-flow');
+    const selectionsHeading = document.querySelector('.booking-page .form-section h2');
+    const backLink = document.querySelector('.booking-page .back-link');
     const tagsContainer = document.getElementById('selected-services');
-    if (serviceNames) {
-        serviceNames.split(',').forEach(name => {
-            const tag = document.createElement('span');
-            tag.className = 'service-tag';
-            tag.textContent = decodeURIComponent(name.trim());
-            tagsContainer.appendChild(tag);
-        });
-    }
+    const successBlock = document.getElementById('booking-success');
+    const successTitle = successBlock ? successBlock.querySelector('h3') : null;
+    const successMessage = document.getElementById('success-message');
 
-    if (priceStr && timeStr) {
-        const summaryInfo = document.createElement('div');
-        summaryInfo.className = 'summary-info-lite';
-        summaryInfo.innerHTML = `
-            <p>Estimated Total: <strong>${decodeURIComponent(priceStr)}</strong></p>
-            <p>Estimated Time: <strong>${decodeURIComponent(timeStr)}</strong></p>
-        `;
-        tagsContainer.after(summaryInfo);
-    }
-
-    // State
-    let currentYear, currentMonth;
+    let currentYear;
+    let currentMonth;
     let selectedDate = null;
     let selectedSlot = null;
     let busyTimes = [];
@@ -85,12 +61,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmBtn = document.getElementById('confirm-btn');
     const bookError = document.getElementById('book-error');
     const nameInput = document.getElementById('cust-name');
+    const phoneInput = document.getElementById('cust-phone');
+    const emailInput = document.getElementById('cust-email');
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    function loadCalendarJsonp(baseUrl) {
+    function loadCalendarJsonp(baseUrl, ignoreEventId) {
         return new Promise((resolve, reject) => {
             const callbackName = 'processCalendarData_' + Date.now();
             const timeoutId = setTimeout(() => {
@@ -109,15 +87,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             window[callbackName] = function (data) {
                 cleanup();
-                console.log('RECEIVED BUSY TIMES (JSONP) from', baseUrl, data);
                 busyTimes = Array.isArray(data) ? data : [];
                 renderCalendar();
                 resolve();
             };
 
+            const qs = new URLSearchParams();
+            qs.set('callback', callbackName);
+            if (ignoreEventId) qs.set('ignoreEventId', ignoreEventId);
+
             const script = document.createElement('script');
             script.id = 'jsonp-script';
-            script.src = `${baseUrl}?callback=${callbackName}`;
+            script.src = `${baseUrl}?${qs.toString()}`;
             script.onerror = () => {
                 cleanup();
                 reject(new Error('jsonp load error'));
@@ -126,14 +107,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function fetchBusyTimes() {
-        console.log('--- FETCHING BUSY TIMES ---');
+    function loadRescheduleMetaJsonp(baseUrl, eventId, token) {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'rescheduleMeta_' + Date.now();
+            const timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error('reschedule meta timeout'));
+            }, 8000);
+
+            function cleanup() {
+                clearTimeout(timeoutId);
+                try {
+                    delete window[callbackName];
+                } catch (e) { /* ignore */ }
+                const tag = document.getElementById('jsonp-reschedule-meta');
+                if (tag) tag.remove();
+            }
+
+            window[callbackName] = function (payload) {
+                cleanup();
+                resolve(payload);
+            };
+
+            const qs = new URLSearchParams({
+                callback: callbackName,
+                action: 'reschedule_meta',
+                eventId: eventId,
+                token: token,
+            });
+            const script = document.createElement('script');
+            script.id = 'jsonp-reschedule-meta';
+            script.src = `${baseUrl}?${qs.toString()}`;
+            script.onerror = () => {
+                cleanup();
+                reject(new Error('reschedule meta load error'));
+            };
+            document.body.appendChild(script);
+        });
+    }
+
+    async function fetchBusyTimes(ignoreEventId) {
         try {
-            await loadCalendarJsonp(SCRIPT_PROXY);
+            await loadCalendarJsonp(SCRIPT_PROXY, ignoreEventId);
         } catch (e) {
             console.warn('Proxy /api/booking failed; loading calendar from Google directly.', e);
             try {
-                await loadCalendarJsonp(SCRIPT_DIRECT);
+                await loadCalendarJsonp(SCRIPT_DIRECT, ignoreEventId);
             } catch (e2) {
                 console.error('Calendar JSONP failed entirely.', e2);
                 busyTimes = [];
@@ -142,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const GAP_THRESHOLD = 60; // 60 minutes buffer
+    const GAP_THRESHOLD = 60;
 
     function isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr) {
         const hours = WORK_HOURS[dayOfWeek];
@@ -151,9 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let prevEnd = workStart;
         busyTimes.forEach(busy => {
-            const bStart = new Date(busy.start);
             const bEnd = new Date(busy.end);
-            // Must be an event that ends today, before or exactly when our slot starts
             if (bEnd <= slotStart && bEnd > prevEnd) {
                 prevEnd = bEnd;
             }
@@ -162,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let nextStart = workEnd;
         busyTimes.forEach(busy => {
             const bStart = new Date(busy.start);
-            // Must be an event that starts today, after or exactly when our slot ends
             if (bStart >= slotEnd && bStart < nextStart) {
                 nextStart = bStart;
             }
@@ -171,9 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const gapBefore = (slotStart - prevEnd) / 60000;
         const gapAfter = (nextStart - slotEnd) / 60000;
 
-        // "i think 15m and 30m gaps are ok but anything above that may be too much"
-        // Meaning exactly 45 mins is our un-fillable "Swiss Cheese" gap. 
-        // So we strictly forbid gaps > 30m and < 60m. 
         if (gapBefore > 30 && gapBefore < GAP_THRESHOLD) return false;
         if (gapAfter > 30 && gapAfter < GAP_THRESHOLD) return false;
 
@@ -183,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function hasAnyAvailableSlot(dateStr, dayOfWeek) {
         const hours = WORK_HOURS[dayOfWeek];
         for (let h = hours.start; h < hours.end; h++) {
-            for (let m of [0, 30]) {
+            for (const m of [0, 30]) {
                 const slotStart = new Date(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
 
@@ -198,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!isConflict && !isOverClosing) {
                     if (isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr)) {
-                        return true; // Found at least one working slot!
+                        return true;
                     }
                 }
             }
@@ -239,7 +252,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (!WORK_HOURS[dayOfWeek]) {
                 btn.classList.add('unavailable');
             } else {
-                // If there are zero viable slots, cross out the whole day
                 if (!hasAnyAvailableSlot(dateStr, dayOfWeek)) {
                     btn.classList.add('unavailable');
                 } else {
@@ -292,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const hours = WORK_HOURS[dayOfWeek];
         for (let h = hours.start; h < hours.end; h++) {
-            for (let m of [0, 30]) {
+            for (const m of [0, 30]) {
                 const timeStr12 = format12h(h, m);
                 const slotStart = new Date(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
@@ -344,43 +356,48 @@ document.addEventListener('DOMContentLoaded', () => {
         updateConfirmBtn();
     }
 
-    const phoneInput = document.getElementById('cust-phone');
-    const emailInput = document.getElementById('cust-email');
+    function updateConfirmBtn() {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const phoneRegex = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/im;
+
+        const isNameValid = nameInput.value.trim().length > 0;
+        const isEmailValid = emailRegex.test(emailInput.value.trim());
+        const phoneVal = phoneInput.value.trim();
+        const isPhoneValid = isReschedule
+            ? phoneVal.replace(/\D/g, '').length >= 10
+            : phoneRegex.test(phoneVal);
+
+        confirmBtn.disabled = !isNameValid || !isEmailValid || !isPhoneValid || !selectedSlot;
+    }
 
     nameInput.addEventListener('input', updateConfirmBtn);
     phoneInput.addEventListener('input', updateConfirmBtn);
     emailInput.addEventListener('input', updateConfirmBtn);
 
-    function updateConfirmBtn() {
-        // Simple but highly effective Regex for standard emails
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        // Strong regex to accept various standard phone formats like (XXX) XXX-XXXX or XXXXXXXXXX
-        const phoneRegex = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/im;
-
-        const isNameValid = nameInput.value.trim().length > 0;
-        const isEmailValid = emailRegex.test(emailInput.value.trim());
-        const isPhoneValid = phoneRegex.test(phoneInput.value.trim());
-
-        confirmBtn.disabled = !isNameValid || !isEmailValid || !isPhoneValid || !selectedSlot;
-    }
-
     confirmBtn.addEventListener('click', async () => {
         if (!selectedSlot || !nameInput.value.trim()) return;
 
-        // Display sending state for better UX
         confirmBtn.disabled = true;
         const originalBtnText = confirmBtn.innerHTML;
         confirmBtn.innerHTML = '<div class="spinner" style="margin: 0 auto;"></div>';
         bookError.innerHTML = '';
 
-        const bookingData = {
-            clientName: nameInput.value.trim(),
-            phone: document.getElementById('cust-phone').value.trim(),
-            email: document.getElementById('cust-email').value.trim(),
-            service: serviceNames,
-            date: selectedDate,
-            time: selectedSlot
-        };
+        const bookingData = isReschedule
+            ? {
+                reschedule: true,
+                eventId: rescheduleEventId,
+                token: rescheduleToken,
+                date: selectedDate,
+                time: selectedSlot,
+            }
+            : {
+                clientName: nameInput.value.trim(),
+                phone: phoneInput.value.trim(),
+                email: emailInput.value.trim(),
+                service: serviceNames,
+                date: selectedDate,
+                time: selectedSlot,
+            };
 
         try {
             const res = await fetch(SCRIPT_PROXY, {
@@ -394,15 +411,103 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             document.getElementById('booking-flow').style.display = 'none';
-            document.querySelector('.form-section:first-of-type').style.display = 'none';
-            document.getElementById('booking-success').style.display = 'block';
-
+            document.querySelector('.booking-page .form-section:first-of-type').style.display = 'none';
+            if (successBlock) successBlock.style.display = 'block';
+            if (isReschedule && successTitle) {
+                successTitle.textContent = 'Appointment rescheduled';
+                if (successMessage) {
+                    successMessage.textContent = 'Check your email for the updated date and time.';
+                    successMessage.style.display = 'block';
+                }
+            }
         } catch (err) {
-            bookError.innerHTML = `<div class="booking-error">Submission failed. Please try again.</div>`;
+            bookError.innerHTML = '<div class="booking-error">Submission failed. Please try again.</div>';
             confirmBtn.innerHTML = originalBtnText;
             confirmBtn.disabled = false;
         }
     });
 
-    fetchBusyTimes();
+    function populateServiceTags(namesBlob) {
+        tagsContainer.innerHTML = '';
+        if (!namesBlob) return;
+        String(namesBlob).split(',').forEach(name => {
+            const t = name.trim();
+            if (!t) return;
+            const tag = document.createElement('span');
+            tag.className = 'service-tag';
+            tag.textContent = decodeURIComponent(t);
+            tagsContainer.appendChild(tag);
+        });
+    }
+
+    async function initBooking() {
+        let ignoreEventId = '';
+
+        if (isReschedule) {
+            if (!rescheduleEventId || !rescheduleToken) {
+                bookingFlow.innerHTML =
+                    '<p style="font-style:italic;color:var(--text-muted);text-align:center;padding:2rem;">This reschedule link is invalid or incomplete. Use the link from your reminder email, or <a href="index.html">book from the site</a>.</p>';
+                return;
+            }
+            if (selectionsHeading) selectionsHeading.textContent = 'Reschedule — your services';
+            if (backLink) {
+                backLink.textContent = 'Back to home';
+                backLink.href = 'index.html';
+            }
+            monthLabel.textContent = 'Loading…';
+
+            let meta;
+            try {
+                meta = await loadRescheduleMetaJsonp(SCRIPT_PROXY, rescheduleEventId, rescheduleToken);
+            } catch (e1) {
+                try {
+                    meta = await loadRescheduleMetaJsonp(SCRIPT_DIRECT, rescheduleEventId, rescheduleToken);
+                } catch (e2) {
+                    meta = null;
+                }
+            }
+            if (!meta || !meta.ok) {
+                bookingFlow.innerHTML =
+                    '<p style="font-style:italic;color:var(--text-muted);text-align:center;padding:2rem;">We could not load this appointment. It may already be cancelled or the link expired. <a href="index.html">Return home</a>.</p>';
+                return;
+            }
+            serviceIds = 'reschedule';
+            serviceNames = meta.service;
+            serviceMinutes = Math.max(30, Number(meta.durationMinutes) || 60);
+            nameInput.value = meta.clientName || '';
+            phoneInput.value = meta.phone || '';
+            emailInput.value = meta.email || '';
+            nameInput.readOnly = true;
+            phoneInput.readOnly = true;
+            emailInput.readOnly = true;
+            nameInput.style.opacity = '0.85';
+            phoneInput.style.opacity = '0.85';
+            emailInput.style.opacity = '0.85';
+            confirmBtn.textContent = 'Confirm new time';
+            ignoreEventId = rescheduleEventId;
+        } else if (!serviceIds) {
+            bookingFlow.innerHTML =
+                '<p style="font-style:italic;color:var(--text-muted); text-align:center; padding: 2rem;">No services selected. <a href="index.html">Go back</a> and choose your services first.</p>';
+            return;
+        }
+
+        populateServiceTags(serviceNames);
+
+        if (priceStr && timeStr && !isReschedule) {
+            const summaryInfo = document.createElement('div');
+            summaryInfo.className = 'summary-info-lite';
+            summaryInfo.innerHTML = `
+            <p>Estimated Total: <strong>${decodeURIComponent(priceStr)}</strong></p>
+            <p>Estimated Time: <strong>${decodeURIComponent(timeStr)}</strong></p>
+        `;
+            tagsContainer.after(summaryInfo);
+        }
+
+        await fetchBusyTimes(ignoreEventId);
+    }
+
+    initBooking().catch(() => {
+        bookingFlow.innerHTML =
+            '<p style="text-align:center;padding:2rem;color:var(--text-muted);">Something went wrong loading the calendar. Please refresh or try again later.</p>';
+    });
 });
