@@ -137,20 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const bookingUrl = `booking.html?services=${encodeURIComponent(squareServices.join(','))}&names=${encodeURIComponent(serviceNames.join(','))}&price=${encodeURIComponent(totalPrice)}&time=${encodeURIComponent(totalTime)}`;
 
         bookBtn.disabled = true;
-        let overlay = document.getElementById('booking-nav-loading');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'booking-nav-loading';
-            overlay.className = 'booking-nav-loading';
-            overlay.setAttribute('role', 'status');
-            overlay.setAttribute('aria-live', 'polite');
-            overlay.innerHTML =
-                '<div class="nav-load-spinner" aria-hidden="true"></div><p class="booking-nav-loading-text">Opening calendar…</p>';
-            document.body.appendChild(overlay);
-        } else {
-            overlay.hidden = false;
-        }
-
+        bookBtn.innerHTML = '<div class="spinner" style="margin:0 auto" aria-hidden="true"></div>';
         window.location.href = bookingUrl;
     });
 

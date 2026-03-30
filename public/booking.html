@@ -85,6 +85,19 @@
             100% { background-position: -100% 0; }
         }
 
+        /* Mobile: same glass tint as the rest of the site, but skip backdrop-filter here (iOS scroll jank) */
+        @media (max-width: 768px) {
+            body.page-booking .form-section {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                background: rgba(255, 255, 255, 0.35);
+            }
+            body.page-booking .background-overlay {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+        }
+
         .cal-header {
             display: flex;
             justify-content: space-between;
@@ -242,16 +255,6 @@
             align-items: center;
             gap: 0.75rem;
         }
-        .spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid rgba(178, 115, 154, 0.2);
-            border-top-color: var(--text-accent);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
         /* Customer Form */
         .customer-form { margin-top: 1rem; }
 
@@ -452,6 +455,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=mobile_booking_v3"></script>
+    <script src="booking-v3.js?v=mobile_booking_v4"></script>
 </body>
 </html>
