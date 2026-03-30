@@ -361,18 +361,18 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedSlot = null;
         customerSection.style.display = 'none';
         confirmBtn.disabled = true;
-
         document.querySelectorAll('.cal-day.selected').forEach(d => d.classList.remove('selected'));
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
-        slotsSection.style.opacity = '';
-        slotsSection.style.transition = '';
         const dateObj = new Date(dateStr + 'T12:00:00');
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
         requestAnimationFrame(() => {
             renderTimeSlots(dateStr, dayOfWeek);
+            setTimeout(() => {
+                slotsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 50);
         });
     }
 

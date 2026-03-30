@@ -12,7 +12,6 @@
             max-width: 700px;
             margin: 0 auto;
             padding: 0 2rem calc(4rem + env(safe-area-inset-bottom, 0px)) 2rem;
-            overflow-anchor: none;
         }
 
         .back-link {
@@ -192,11 +191,10 @@
 
         .slots-section {
             margin-bottom: 2.5rem;
-            overflow-anchor: none;
         }
 
         #booking-flow {
-            overflow-anchor: none;
+            min-height: 400px; /* Prevent layout collapse during updates */
         }
 
         .slots-label {
