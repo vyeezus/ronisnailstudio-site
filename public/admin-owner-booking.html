@@ -23,7 +23,10 @@
             margin-bottom: 0.45rem;
         }
         .cal-embed-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0.5rem 0 0; line-height: 1.45; }
+        /* Google embed has no font-size API; scale the iframe so event titles/times read smaller and more fits in view. Tweak 0.82–0.92 if needed. */
         .admin-cal-frame-wrap {
+            --admin-cal-embed-scale: 0.86;
+            position: relative;
             border-radius: 12px;
             overflow: hidden;
             border: 1px solid rgba(178, 115, 154, 0.2);
@@ -31,11 +34,20 @@
             height: min(52vh, 520px);
             min-height: 320px;
         }
-        .admin-cal-frame-wrap iframe {
-            display: block;
-            width: 100%;
-            height: 100%;
+        .admin-cal-scale-inner {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+        }
+        .admin-cal-scale-inner iframe {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: calc(100% / var(--admin-cal-embed-scale));
+            height: calc(100% / var(--admin-cal-embed-scale));
             border: 0;
+            transform: scale(var(--admin-cal-embed-scale));
+            transform-origin: 0 0;
         }
         @media (min-width: 960px) {
             .admin-book-layout {
@@ -130,7 +142,9 @@
             <aside class="admin-book-cal-aside" aria-label="Google calendars">
                 <span class="cal-embed-label">Calendars</span>
                 <div class="admin-cal-frame-wrap">
-                    <iframe id="admin-cal-embed" title="Studio and personal Google calendars"></iframe>
+                    <div class="admin-cal-scale-inner">
+                        <iframe id="admin-cal-embed" title="Studio and personal Google calendars"></iframe>
+                    </div>
                 </div>
                 <p class="cal-embed-hint">Sign in to Google in this browser if the calendar is blank.</p>
             </aside>
