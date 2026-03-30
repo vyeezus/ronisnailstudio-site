@@ -24,6 +24,20 @@ const SQUARE_SERVICE_MAP = {
 };
 // ------------------------------------------
 
+/** Warm HTTP cache for the booking flow once the user can tap Book (helps mobile a lot). */
+const BOOKING_JS_HREF = 'booking-v3.js?v=mobile_booking_v10';
+let bookingPrefetchStarted = false;
+function prefetchBookingAssets() {
+    if (bookingPrefetchStarted) return;
+    bookingPrefetchStarted = true;
+    [['prefetch', 'booking.html'], ['prefetch', BOOKING_JS_HREF]].forEach(([rel, href]) => {
+        const link = document.createElement('link');
+        link.rel = rel;
+        link.href = href;
+        document.head.appendChild(link);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Booking Form Selectors
     const baseServices = document.querySelectorAll('input[name="base-service"]');
@@ -108,6 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* --- POLICY LOGIC --- */
     function updateBookButton() {
         bookBtn.disabled = !policyCheckbox.checked;
+        if (policyCheckbox.checked) prefetchBookingAssets();
     }
 
     policyCheckbox.addEventListener('change', updateBookButton);
@@ -143,9 +158,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const go = () => {
             window.location.href = bookingUrl;
         };
-        requestAnimationFrame(() => {
-            requestAnimationFrame(go);
-        });
+        // One frame so the spinner paints; double rAF added ~32ms before navigation on mobile.
+        requestAnimationFrame(go);
     });
 
     function openModal(e) {

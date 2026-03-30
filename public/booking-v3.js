@@ -1,6 +1,6 @@
 // --- Roni's Nail Studio — Custom Booking Calendar (reschedule + new booking) ---
 
-document.addEventListener('DOMContentLoaded', () => {
+function bootBookingPage() {
     const params = new URLSearchParams(window.location.search);
     let serviceNames = params.get('names');
     let serviceIds = params.get('services');
@@ -621,4 +621,10 @@ document.addEventListener('DOMContentLoaded', () => {
         bookingFlow.innerHTML =
             '<p style="text-align:center;padding:2rem;color:var(--text-muted);">Something went wrong loading the calendar. Please refresh or try again later.</p>';
     });
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootBookingPage);
+} else {
+    bootBookingPage();
+}
