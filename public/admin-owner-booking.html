@@ -8,7 +8,58 @@
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        .admin-book-page { max-width: 520px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .admin-book-page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .admin-book-layout { display: flex; flex-direction: column; gap: 1.35rem; }
+        .admin-book-primary { max-width: 520px; width: 100%; margin: 0 auto; }
+        .admin-book-cal-aside { width: 100%; max-width: 520px; margin: 0 auto; }
+        .admin-book-footer-fields { max-width: 520px; width: 100%; margin: 0 auto; }
+        .cal-embed-label {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            margin-bottom: 0.45rem;
+        }
+        .cal-embed-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0.5rem 0 0; line-height: 1.45; }
+        .admin-cal-frame-wrap {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(178, 115, 154, 0.2);
+            background: rgba(255, 255, 255, 0.55);
+            height: min(52vh, 520px);
+            min-height: 320px;
+        }
+        .admin-cal-frame-wrap iframe {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+        @media (min-width: 960px) {
+            .admin-book-layout {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+                grid-template-rows: auto auto;
+                gap: 1.25rem 1.75rem;
+                align-items: start;
+            }
+            .admin-book-primary { grid-column: 1; grid-row: 1; margin: 0; max-width: none; }
+            .admin-book-footer-fields { grid-column: 1; grid-row: 2; margin: 0; max-width: none; }
+            .admin-book-cal-aside {
+                grid-column: 2;
+                grid-row: 1 / 3;
+                margin: 0;
+                max-width: none;
+                position: sticky;
+                top: 0.75rem;
+            }
+            .admin-cal-frame-wrap {
+                height: min(70vh, 640px);
+                min-height: 420px;
+            }
+        }
         .admin-book-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.75rem; color: var(--text-main); text-align: center; }
         .admin-nav { text-align: center; margin-bottom: 1.35rem; font-size: 0.88rem; }
         .admin-nav a { color: var(--text-accent); text-decoration: none; font-weight: 500; }
@@ -71,6 +122,8 @@
     </header>
     <main class="container">
         <div class="form-section admin-book-page">
+            <div class="admin-book-layout">
+            <div class="admin-book-primary">
             <h1>Book a client</h1>
             <p class="admin-nav"><a href="admin-studio-hours.html">Edit studio hours</a> · <a href="index.html">Home</a></p>
             <div id="msg" class="msg" role="status"></div>
@@ -97,6 +150,15 @@
             <input type="email" id="client-email" required autocomplete="email">
             <label for="service">Service description</label>
             <textarea id="service" required placeholder="e.g. Structured Gel refill + Tier 2 art"></textarea>
+            </div>
+            <aside class="admin-book-cal-aside" aria-label="Google calendars">
+                <span class="cal-embed-label">Calendars</span>
+                <div class="admin-cal-frame-wrap">
+                    <iframe id="admin-cal-embed" title="Studio and personal Google calendars"></iframe>
+                </div>
+                <p class="cal-embed-hint">Sign in to Google in this browser if the calendar is blank.</p>
+            </aside>
+            <div class="admin-book-footer-fields">
             <label for="appt-date">Date</label>
             <input type="date" id="appt-date" required>
             <label for="appt-time">Time</label>
@@ -106,12 +168,42 @@
             <div class="btn-row">
                 <button type="button" class="cute-btn" id="btn-submit">Create booking &amp; send email</button>
             </div>
+            </div>
+            </div>
         </div>
     </main>
     <script>
         (function () {
             var PROXY = window.location.origin + '/api/booking';
             var STORAGE_KEY = 'booking_admin_secret';
+
+            /** Keep in sync with CALENDAR_ID and PERSONAL_CALENDAR_ID in google_apps_script.js */
+            var ADMIN_CALENDAR_EMBED_IDS = [
+                'f9c38dc209bf435115238aba24b24be51b7e4e2f05f3e3f9c08b9077a78c33b3@group.calendar.google.com',
+                'nguyenveronica0108@gmail.com',
+            ];
+            (function initAdminCalEmbed() {
+                var iframe = document.getElementById('admin-cal-embed');
+                if (!iframe) return;
+                var ids = ADMIN_CALENDAR_EMBED_IDS.filter(function (id) {
+                    return id && String(id).trim();
+                });
+                if (!ids.length) return;
+                var ctz =
+                    (typeof Intl !== 'undefined' &&
+                        Intl.DateTimeFormat &&
+                        Intl.DateTimeFormat().resolvedOptions().timeZone) ||
+                    'America/Chicago';
+                var q = new URLSearchParams();
+                q.set('ctz', ctz);
+                q.set('mode', 'WEEK');
+                ids.forEach(function (id) {
+                    q.append('src', String(id).trim());
+                });
+                iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
+                iframe.setAttribute('loading', 'lazy');
+                iframe.src = 'https://calendar.google.com/calendar/embed?' + q.toString();
+            })();
 
             var msg = document.getElementById('msg');
             var secretInput = document.getElementById('admin-secret');
