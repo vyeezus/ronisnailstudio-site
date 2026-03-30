@@ -484,7 +484,8 @@ document.addEventListener('DOMContentLoaded', () => {
             phoneInput.style.opacity = '0.85';
             emailInput.style.opacity = '0.85';
             confirmBtn.textContent = 'Confirm new time';
-            ignoreEventId = rescheduleEventId;
+            // Do not strip this event from busy times: until they confirm, it still occupies the calendar.
+            // Ignoring it made overlapping slots (e.g. 3:00 for a 75m appt after 2:30) look falsely open.
         } else if (!serviceIds) {
             bookingFlow.innerHTML =
                 '<p style="font-style:italic;color:var(--text-muted); text-align:center; padding: 2rem;">No services selected. <a href="index.html">Go back</a> and choose your services first.</p>';
