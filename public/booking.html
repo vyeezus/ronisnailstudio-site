@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="page-booking">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -85,15 +85,13 @@
             100% { background-position: -100% 0; }
         }
 
-        /* Booking only: no backdrop-filter on any viewport — Chrome desktop still hit scroll/compositing glitches with blur + page layout; Safari was OK but this matches. */
-        body.page-booking .form-section {
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-            background: rgba(255, 255, 255, 0.35);
+        /* Same glass as index (global .form-section + .background-overlay). Scroll help for Chrome without flattening colors. */
+        html.page-booking,
+        body.page-booking {
+            overflow-anchor: none;
         }
-        body.page-booking .background-overlay {
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
+        #booking-flow {
+            contain: layout;
         }
         .cal-header {
             display: flex;
@@ -453,6 +451,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=mobile_booking_v8"></script>
+    <script src="booking-v3.js?v=mobile_booking_v9"></script>
 </body>
 </html>
