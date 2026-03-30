@@ -134,24 +134,76 @@ function normalizeTimeToken_(t) {
     .toLowerCase();
 }
 
+/** Column H status: trim + uppercase so "Confirmed " or formulas still match. */
+function normalizeSheetStatus_(raw) {
+  return String(raw == null ? '' : raw)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+/**
+ * If Advanced Calendar API is enabled (Editor → Services → Google Calendar API), this is authoritative
+ * for deleted / cancelled events. CalendarApp alone can still return trashed events from getEventById().
+ * Returns: 'active' | 'gone' | 'unknown' (unknown = API off or non-404 error — use CalendarApp heuristic).
+ */
+function calendarApiEventStatus_(eventId) {
+  const want = String(eventId || '').trim();
+  if (!want) return 'gone';
+  try {
+    if (typeof Calendar === 'undefined' || !Calendar.Events || typeof Calendar.Events.get !== 'function') {
+      return 'unknown';
+    }
+  } catch (e) {
+    return 'unknown';
+  }
+  try {
+    const apiEv = Calendar.Events.get(CALENDAR_ID, want);
+    if (!apiEv) return 'gone';
+    if (apiEv.status === 'cancelled') return 'gone';
+    return 'active';
+  } catch (err) {
+    const msg = String(err.message || err).toLowerCase();
+    if (
+      msg.indexOf('not found') >= 0 ||
+      msg.indexOf('404') >= 0 ||
+      msg.indexOf('requested entity was not found') >= 0
+    ) {
+      return 'gone';
+    }
+    return 'unknown';
+  }
+}
+
 /**
  * Deleted events often stay in Calendar "trash" but disappear from normal listings.
- * getEventById() can still return them — so we only trust an event that also appears in getEvents().
+ * getEventById() can still return them — so we only trust an event that also appears in getEvents(),
+ * unless the Advanced Calendar API says the event is active (then we skip the list check).
  */
 function getActiveBookingEvent_(calendar, eventId) {
+  const want = String(eventId || '').trim();
+  if (!want) return null;
+
+  const api = calendarApiEventStatus_(want);
+  if (api === 'gone') return null;
+
   let ev = null;
   try {
-    ev = calendar.getEventById(eventId);
+    ev = calendar.getEventById(want);
   } catch (err) {
     return null;
   }
   if (!ev) return null;
+
+  if (api === 'active') {
+    return ev;
+  }
+
   try {
     const center = ev.getStartTime();
     const from = new Date(center.getTime() - 120 * 86400000);
     const to = new Date(center.getTime() + 120 * 86400000);
     const listed = calendar.getEvents(from, to);
-    const want = String(eventId);
     for (let i = 0; i < listed.length; i++) {
       if (String(listed[i].getId()) === want) return ev;
     }
@@ -164,78 +216,138 @@ function getActiveBookingEvent_(calendar, eventId) {
 /**
  * --- Calendar → Sheet sync ---
  * - You moved the event: sheet + client “time updated” email.
- * - You deleted the event: sheet → CANCELLED, client gets cancellation email (uses row date/time/service).
- * Run installCalendarSyncTrigger() so this checks about every 10 minutes.
+ * - You deleted the event (on THIS studio calendar — CALENDAR_ID): sheet → CANCELLED, client email.
+ * Best latency: one “Calendar – Changed” trigger on this calendar (not two deployments). Optional clock
+ * backup: installCalendarSyncTrigger() — personal @gmail may only get hourly.
+ * Optional: Editor → Services → add “Google Calendar API” so deleted/cancelled events are detected reliably.
  */
 function syncCalendarToSpreadsheet() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    Logger.log('syncCalendarToSpreadsheet: skipped (another sync is running — avoids duplicate emails)');
+    return;
+  }
+  try {
+    syncCalendarToSpreadsheetBody_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function syncCalendarToSpreadsheetBody_() {
   const tz = Session.getScriptTimeZone();
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
   const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+  let qualifying = 0;
+  let stillOnCalendar = 0;
+  let markedCancelled = 0;
+  let timeUpdated = 0;
+  Logger.log(
+    'syncCalendarToSpreadsheet: START sheet=' +
+      SHEET_NAME +
+      ' dataRows=' +
+      (data.length - 1) +
+      ' calendarId=' +
+      CALENDAR_ID
+  );
   for (let i = 1; i < data.length; i++) {
-    const status = data[i][7];
-    const eventId = data[i][8];
-    if (
-      (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING' || status === 'MOD_PROPOSED') &&
-      eventId &&
-      String(eventId).indexOf('pending') < 0
-    ) {
-      const event = getActiveBookingEvent_(calendar, eventId);
-      if (!event) {
-        const clientName = data[i][1];
-        const clientEmail = data[i][6];
-        const service = data[i][3];
-        const neatD = formatSheetDateForEmail(data[i][4]);
-        const neatTime = formatSheetTimeForEmail(data[i][5]);
-        sheet.getRange(i + 1, 8).setValue('CANCELLED');
-        sheet.getRange(i + 1, 11).setValue('');
-        SpreadsheetApp.flush();
-        if (clientEmail) {
-          const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
-          MailApp.sendEmail({
-            to: clientEmail,
-            name: "Roni's Nail Studio",
-            subject: "Appointment Cancelled: Roni's Nail Studio",
-            htmlBody: html,
-          });
-          Logger.log('syncCalendarToSpreadsheet: cancellation email sent for row ' + (i + 1) + ' eventId=' + eventId);
-        } else {
-          Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' event missing but no client email — no email sent');
+    try {
+      const status = normalizeSheetStatus_(data[i][7]);
+      const eventId = data[i][8];
+      if (
+        (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED' || status === 'PENDING' || status === 'MOD_PROPOSED') &&
+        eventId &&
+        String(eventId).indexOf('pending') < 0
+      ) {
+        qualifying++;
+        const event = getActiveBookingEvent_(calendar, eventId);
+        if (!event) {
+          const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
+          if (statusFresh === 'CANCELLED') {
+            Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' already CANCELLED — skip (no duplicate email)');
+            continue;
+          }
+          markedCancelled++;
+          const clientName = data[i][1];
+          const clientEmail = data[i][6];
+          const service = data[i][3];
+          const neatD = formatSheetDateForEmail(data[i][4]);
+          const neatTime = formatSheetTimeForEmail(data[i][5]);
+          Logger.log(
+            'syncCalendarToSpreadsheet: row ' +
+              (i + 1) +
+              ' no active event → CANCELLED (status was ' +
+              status +
+              ') eventId=' +
+              String(eventId).substring(0, 40) +
+              '…'
+          );
+          sheet.getRange(i + 1, 8).setValue('CANCELLED');
+          sheet.getRange(i + 1, 11).setValue('');
+          SpreadsheetApp.flush();
+          if (clientEmail) {
+            const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
+            MailApp.sendEmail({
+              to: clientEmail,
+              name: "Roni's Nail Studio",
+              subject: "Appointment Cancelled: Roni's Nail Studio",
+              htmlBody: html,
+            });
+            Logger.log('syncCalendarToSpreadsheet: cancellation email sent for row ' + (i + 1) + ' eventId=' + eventId);
+          } else {
+            Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' event missing but no client email — no email sent');
+          }
+          continue;
         }
-        continue;
-      }
-      const sheetDateYmd = syncSheetDateToYyyyMmDd_(data[i][4]);
-      const sheetTimeNorm = normalizeTimeToken_(formatSheetTimeForEmail(data[i][5]));
-      const calStart = event.getStartTime();
-      const calDateYmd = Utilities.formatDate(calStart, tz, 'yyyy-MM-dd');
-      const calTimeNorm = normalizeTimeToken_(Utilities.formatDate(calStart, tz, 'h:mm a'));
-      if (calDateYmd !== sheetDateYmd || calTimeNorm !== sheetTimeNorm) {
-        const calTimeDisplay = Utilities.formatDate(calStart, tz, 'h:mm a');
-        sheet.getRange(i + 1, 5).setValue(calStart);
-        sheet.getRange(i + 1, 6).setValue(calTimeDisplay);
-        sheet.getRange(i + 1, 11).setValue('');
-        SpreadsheetApp.flush();
-        const neatDate = Utilities.formatDate(calStart, tz, 'EEEE, MMMM d, yyyy');
-        const clientEmail = data[i][6];
-        const service = data[i][3];
-        if (clientEmail) {
-          const html = getCalendarUpdatedClientEmailHtml(data[i][1], neatDate, calTimeDisplay, service);
-          MailApp.sendEmail({
-            to: clientEmail,
-            name: "Roni's Nail Studio",
-            subject: "Appointment time updated — Roni's Nail Studio",
-            htmlBody: html,
-          });
+        stillOnCalendar++;
+        const sheetDateYmd = syncSheetDateToYyyyMmDd_(data[i][4]);
+        const sheetTimeNorm = normalizeTimeToken_(formatSheetTimeForEmail(data[i][5]));
+        const calStart = event.getStartTime();
+        const calDateYmd = Utilities.formatDate(calStart, tz, 'yyyy-MM-dd');
+        const calTimeNorm = normalizeTimeToken_(Utilities.formatDate(calStart, tz, 'h:mm a'));
+        if (calDateYmd !== sheetDateYmd || calTimeNorm !== sheetTimeNorm) {
+          timeUpdated++;
+          const calTimeDisplay = Utilities.formatDate(calStart, tz, 'h:mm a');
+          sheet.getRange(i + 1, 5).setValue(calStart);
+          sheet.getRange(i + 1, 6).setValue(calTimeDisplay);
+          sheet.getRange(i + 1, 11).setValue('');
+          SpreadsheetApp.flush();
+          const neatDate = Utilities.formatDate(calStart, tz, 'EEEE, MMMM d, yyyy');
+          const clientEmail = data[i][6];
+          const service = data[i][3];
+          if (clientEmail) {
+            const html = getCalendarUpdatedClientEmailHtml(data[i][1], neatDate, calTimeDisplay, service);
+            MailApp.sendEmail({
+              to: clientEmail,
+              name: "Roni's Nail Studio",
+              subject: "Appointment time updated — Roni's Nail Studio",
+              htmlBody: html,
+            });
+          }
         }
       }
+    } catch (rowErr) {
+      Logger.log('syncCalendarToSpreadsheet row ' + (i + 1) + ' skipped: ' + rowErr);
     }
   }
+  Logger.log(
+    'syncCalendarToSpreadsheet: DONE qualifying=' +
+      qualifying +
+      ' stillOnCalendar=' +
+      stillOnCalendar +
+      ' markedCancelled=' +
+      markedCancelled +
+      ' timeUpdated=' +
+      timeUpdated
+  );
 }
 
 /**
- * One-time setup: creates a time-driven trigger to run syncCalendarToSpreadsheet every 10 minutes.
- * Apps Script editor → select installCalendarSyncTrigger → Run. (Skip if trigger already listed under Triggers.)
+ * One-time setup: time-driven trigger for syncCalendarToSpreadsheet.
+ * Personal Google accounts often cannot schedule triggers more often than once per hour; this tries 10 minutes
+ * first, then falls back to every 1 hour. Check Triggers (clock icon) and Executions after running.
  */
 function installCalendarSyncTrigger() {
   const fn = 'syncCalendarToSpreadsheet';
@@ -246,8 +358,83 @@ function installCalendarSyncTrigger() {
       return;
     }
   }
-  ScriptApp.newTrigger(fn).timeBased().everyMinutes(10).create();
-  Logger.log('Installed time trigger: ' + fn + ' every 10 minutes');
+  try {
+    ScriptApp.newTrigger(fn).timeBased().everyMinutes(10).create();
+    Logger.log('Installed time trigger: ' + fn + ' every 10 minutes');
+  } catch (e) {
+    ScriptApp.newTrigger(fn).timeBased().everyHours(1).create();
+    Logger.log('10-minute trigger not allowed for this account; installed hourly instead. Reason: ' + e);
+  }
+}
+
+/**
+ * Removes every time-based trigger that calls syncCalendarToSpreadsheet, then installs a fresh one.
+ * Use if you suspect an old trigger is stale or pointed at the wrong project copy.
+ */
+function reinstallCalendarSyncTrigger() {
+  const fn = 'syncCalendarToSpreadsheet';
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = triggers.length - 1; i >= 0; i--) {
+    if (triggers[i].getHandlerFunction() === fn) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  try {
+    ScriptApp.newTrigger(fn).timeBased().everyMinutes(10).create();
+    Logger.log('Reinstalled: ' + fn + ' every 10 minutes');
+  } catch (e) {
+    ScriptApp.newTrigger(fn).timeBased().everyHours(1).create();
+    Logger.log('Reinstalled: ' + fn + ' every 1 hour (10 min not allowed). Reason: ' + e);
+  }
+}
+
+/**
+ * Run once from the editor: logs whether Calendar + sheet open, API service, and installed triggers.
+ * Open Executions → select this run → View → to read the log.
+ */
+function validateCalendarSyncSetup() {
+  const lines = [];
+  lines.push('--- validateCalendarSyncSetup ---');
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    lines.push('Calendar OK: ' + cal.getName() + ' (' + CALENDAR_ID + ')');
+  } catch (e) {
+    lines.push('Calendar ERROR (check CALENDAR_ID + script owner access): ' + e);
+  }
+  try {
+    const ss = getCRMSpreadsheet();
+    const sh = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    lines.push('Sheet OK: ' + ss.getName() + ' tab=' + sh.getName() + ' rows=' + sh.getLastRow());
+  } catch (e2) {
+    lines.push('Sheet ERROR: ' + e2);
+  }
+  try {
+    if (typeof Calendar !== 'undefined' && Calendar.Events && typeof Calendar.Events.get === 'function') {
+      lines.push('Advanced Calendar API: ENABLED (good for delete/cancel detection)');
+    } else {
+      lines.push('Advanced Calendar API: NOT enabled → Editor → Services → add Google Calendar API');
+    }
+  } catch (e3) {
+    lines.push('Advanced Calendar API: NOT enabled');
+  }
+  const triggers = ScriptApp.getProjectTriggers();
+  let syncTriggers = 0;
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'syncCalendarToSpreadsheet') {
+      syncTriggers++;
+      lines.push(
+        'Trigger: syncCalendarToSpreadsheet | type=' +
+          triggers[i].getEventType() +
+          ' (TIME_CLOCK = scheduled)'
+      );
+    }
+  }
+  if (syncTriggers === 0) {
+    lines.push('WARNING: no trigger calls syncCalendarToSpreadsheet — run installCalendarSyncTrigger()');
+  }
+  const out = lines.join('\n');
+  Logger.log(out);
+  return out;
 }
 
 /**
