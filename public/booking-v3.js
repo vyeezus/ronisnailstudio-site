@@ -366,17 +366,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
-        slotsSection.style.transition = 'none';
-        slotsSection.style.opacity = '0';
+        slotsSection.style.opacity = '';
+        slotsSection.style.transition = '';
         const dateObj = new Date(dateStr + 'T12:00:00');
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
         requestAnimationFrame(() => {
             renderTimeSlots(dateStr, dayOfWeek);
-            requestAnimationFrame(() => {
-                slotsSection.style.transition = 'opacity 0.2s ease-out';
-                slotsSection.style.opacity = '1';
-            });
         });
     }
 

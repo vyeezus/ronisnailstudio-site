@@ -16,10 +16,16 @@
     padding: 0;
 }
 
+html {
+    background-color: #fdf5f9;
+    min-height: 100%;
+}
+
 body {
     font-family: var(--font-body);
     color: var(--text-main);
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: hidden;
     line-height: 1.6;
     position: relative;
@@ -28,13 +34,13 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Base Texture layer: Starry Cute Wallpaper */
+/* Base Texture layer: Starry Cute Wallpaper — inset:0 beats 100vh on iOS Chrome (toolbar gap / white strip); avoid 100vw horizontal overflow */
 .background-texture {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: auto;
+    height: auto;
+    min-height: 100%;
     background-image: url('bg.png');
     background-size: cover;
     background-position: center;
@@ -52,10 +58,10 @@ body {
 /* The lush pastel wash over the texture */
 .background-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: auto;
+    height: auto;
+    min-height: 100%;
     background: var(--bg-overlay); 
     backdrop-filter: blur(8px); /* Soft focus */
     -webkit-backdrop-filter: blur(8px);
@@ -531,10 +537,10 @@ hr {
 /* Ultra Minimal Modal Styling */
 .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
+    width: auto;
+    height: auto;
+    min-height: 100%;
     background: rgba(246, 235, 250, 0.85); /* Matches background theme */
     backdrop-filter: blur(15px);
     -webkit-backdrop-filter: blur(15px);
