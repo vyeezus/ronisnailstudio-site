@@ -83,27 +83,46 @@
                         proposedTime: timeVal
                     })
                 })
-                    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+                    .then(function (r) {
+                        return r.text().then(function (t) {
+                            var j = {};
+                            try {
+                                j = JSON.parse(String(t || '').trim().replace(/^\uFEFF/, ''));
+                            } catch (e) {
+                                j = { _parseError: true, _raw: t };
+                            }
+                            return { ok: r.ok, status: r.status, j: j };
+                        });
+                    })
                     .then(function (x) {
-                        if (x.ok && x.j.status === 'success') {
+                        var s = x.j && x.j.status;
+                        if (x.ok && s === 'success') {
                             form.style.display = 'none';
                             msg.className = 'msg ok';
                             msg.textContent = 'Done. The client was emailed. You’ll get a copy at the studio inbox. You can close this tab.';
                             msg.style.display = 'block';
-                        } else {
-                            var m = x.j.message || 'Something went wrong.';
-                            if (m === 'already_proposed') m = 'You already sent an alternate time for this request. Wait for the client or decline the request from your email.';
-                            if (m === 'not_pending') m = 'This request is no longer pending.';
-                            if (m === 'invalid_token') m = 'Link expired or invalid. Open the latest booking email from your inbox.';
-                            msg.className = 'msg err';
-                            msg.textContent = m;
+                            return;
+                        }
+                        if (x.j && x.j.reason === 'timeout') {
+                            msg.className = 'msg ok';
+                            msg.textContent =
+                                'The request took a long time to finish. If you and the client both received the “suggested time” emails, it worked—check your sheet (status MOD_PROPOSED). If not, wait a minute and try once more.';
                             msg.style.display = 'block';
                             btn.disabled = false;
+                            return;
                         }
+                        var m = (x.j && x.j.message) || 'Something went wrong.';
+                        if (m === 'already_proposed') m = 'You already sent an alternate time for this request. Wait for the client or decline the request from your email.';
+                        if (m === 'not_pending') m = 'This request is no longer pending.';
+                        if (m === 'invalid_token') m = 'Link expired or invalid. Open the latest booking email from your inbox.';
+                        msg.className = 'msg err';
+                        msg.textContent = m;
+                        msg.style.display = 'block';
+                        btn.disabled = false;
                     })
                     .catch(function () {
                         msg.className = 'msg err';
-                        msg.textContent = 'Could not reach the server. Try again or use the Apps Script URL directly.';
+                        msg.textContent = 'Could not reach the server. If the client still got the suggested-time email, the request may have succeeded—check your inbox and the sheet before submitting again.';
                         msg.style.display = 'block';
                         btn.disabled = false;
                     });

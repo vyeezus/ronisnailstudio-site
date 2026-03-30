@@ -6,6 +6,8 @@ const APPS_SCRIPT_EXEC_URL =
   'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
 
 const FETCH_TIMEOUT_MS = 8000;
+/** POST (bookings, owner alternate-time) can exceed 8s while MailApp + Sheets run on Google. */
+const POST_FETCH_TIMEOUT_MS = 45000;
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -84,7 +86,7 @@ exports.handler = async (event) => {
       rawBody = Buffer.from(rawBody, 'base64').toString('utf8');
     }
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => ac.abort(), POST_FETCH_TIMEOUT_MS);
     try {
       const res = await fetch(APPS_SCRIPT_EXEC_URL, {
         method: 'POST',
