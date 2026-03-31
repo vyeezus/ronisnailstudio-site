@@ -9,6 +9,17 @@ const SHEET_NAME = 'Bookings';
 /** Optional tab: columns day (0–6 Sun–Sat), start, end (integers). If missing, booking uses script defaults. */
 const HOURS_SHEET_NAME = 'StudioHours';
 const PENDING_COLOR = '5'; // Yellow
+/**
+ * Prepended to calendar titles only after the *client* confirms (2-day reminder Confirm, or accepting an alternate time).
+ * Plain Unicode dingbat (U+2727), not an emoji codepoint — usually renders as a small four-point sparkle.
+ */
+const CLIENT_CONFIRMED_CAL_PREFIX = '\u2727 '; // ✧
+
+function clientConfirmedCalendarEventTitle_(clientName) {
+  const n = String(clientName == null ? '' : clientName).trim() || 'Client';
+  return CLIENT_CONFIRMED_CAL_PREFIX + n;
+}
+
 const MY_EMAIL = 'ronisnailstudio@gmail.com';
 const SPREADSHEET_ID = '16IJ_aJlAXWrF6UpM_g4Oia8rGGyAcmeR898STRX_5tc'; 
 /**
@@ -825,7 +836,7 @@ function doGet(e) {
     }
     const durMin = effectiveDurationMinutesFromEvent_(ev);
     const newEnd = new Date(start.getTime() + durMin * 60000);
-    const nEv = cal.createEvent(clientName, start, newEnd, { description: ev.getDescription() });
+    const nEv = cal.createEvent(clientConfirmedCalendarEventTitle_(clientName), start, newEnd, { description: ev.getDescription() });
     ev.deleteEvent();
     sheet.getRange(rowIndex, 9).setValue(nEv.getId());
     sheet.getRange(rowIndex, 5).setValue(start);
@@ -895,6 +906,11 @@ function doGet(e) {
     }
     if (action === 'client_confirm') {
       sheet.getRange(rowIndex, 8).setValue('CLIENT_CONFIRMED');
+      const calConfirm = CalendarApp.getCalendarById(CALENDAR_ID);
+      const evConfirm = calConfirm.getEventById(eventId);
+      if (evConfirm) {
+        evConfirm.setTitle(clientConfirmedCalendarEventTitle_(clientName));
+      }
       SpreadsheetApp.flush();
       const neatD = formatSheetDateForEmail(dateVal);
       const neatTime = formatSheetTimeForEmail(timeStr);
