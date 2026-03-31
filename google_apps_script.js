@@ -129,6 +129,22 @@ function isDateInPublicBookingWindow_(yyyyMmDd) {
   return (y === cy && mo === cm) || (y === ny && mo === nm);
 }
 
+/** Earliest yyyy-MM-dd for public booking/reschedule (script TZ): not same-day or next calendar day. */
+function minPublicBookingLeadDateYmd_() {
+  const tz = Session.getScriptTimeZone();
+  const todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const p = todayStr.split('-');
+  var cal = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10), 12, 0, 0);
+  cal.setDate(cal.getDate() + 2);
+  return Utilities.formatDate(cal, tz, 'yyyy-MM-dd');
+}
+
+function isDateMeetingBookingLeadTime_(yyyyMmDd) {
+  const s = String(yyyyMmDd == null ? '' : yyyyMmDd).trim().split('T')[0].split(' ')[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return s >= minPublicBookingLeadDateYmd_();
+}
+
 function parseDurationMinutesFromDescription_(description) {
   if (!description) return 0;
   const m = String(description).match(/DurationMinutes:\s*(\d+)/i);
@@ -1122,6 +1138,9 @@ function handleReschedulePost(d) {
   if (!isDateInPublicBookingWindow_(rs)) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_outside_booking_window' })).setMimeType(ContentService.MimeType.JSON);
   }
+  if (!isDateMeetingBookingLeadTime_(rs)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_too_soon' })).setMimeType(ContentService.MimeType.JSON);
+  }
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
@@ -1335,6 +1354,9 @@ function doPost(e) {
     }
     if (!isDateInPublicBookingWindow_(pubDateStr)) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_outside_booking_window' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    if (!isDateMeetingBookingLeadTime_(pubDateStr)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_too_soon' })).setMimeType(ContentService.MimeType.JSON);
     }
     const actionToken = generateActionToken();
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];

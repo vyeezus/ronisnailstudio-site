@@ -121,6 +121,9 @@ function bootBookingPage() {
     let busyTimes = [];
 
     const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const minBookableStart = new Date(todayStart);
+    minBookableStart.setDate(minBookableStart.getDate() + 2);
     currentYear = today.getFullYear();
     currentMonth = today.getMonth();
 
@@ -292,6 +295,9 @@ function bootBookingPage() {
     }
 
     function hasAnyAvailableSlot(dateStr, dayOfWeek) {
+        const p = dateStr.split('-').map(Number);
+        const slotDayStart = new Date(p[0], p[1] - 1, p[2]);
+        if (slotDayStart < minBookableStart) return false;
         const hours = dayHours(dayOfWeek);
         if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
@@ -344,8 +350,11 @@ function bootBookingPage() {
             btn.className = 'cal-day';
             btn.textContent = day;
 
-            if (dateObj < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+            if (dateObj < todayStart) {
                 btn.classList.add('past');
+            } else if (dateObj < minBookableStart) {
+                btn.classList.add('unavailable');
+                if (dateStr === formatDate(today)) btn.classList.add('today');
             } else if (!dayHours(dayOfWeek)) {
                 btn.classList.add('unavailable');
             } else {
@@ -353,7 +362,6 @@ function bootBookingPage() {
                     btn.classList.add('unavailable');
                 } else {
                     btn.classList.add('available');
-                    if (dateStr === formatDate(today)) btn.classList.add('today');
                     if (selectedDate === dateStr) btn.classList.add('selected');
                     btn.addEventListener('click', () => selectDate(dateStr, btn, dayOfWeek));
                 }
@@ -568,7 +576,9 @@ function bootBookingPage() {
             const msg =
                 apiMsg === 'date_outside_booking_window'
                     ? 'That date isn’t open for booking yet. Please choose a day in this month or next month, then try again.'
-                    : 'Submission failed. Please try again.';
+                    : apiMsg === 'date_too_soon'
+                      ? 'Appointments must be booked at least two days in advance (not today or tomorrow). Please pick a later date.'
+                      : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');
