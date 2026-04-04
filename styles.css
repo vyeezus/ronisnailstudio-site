@@ -8,7 +8,6 @@
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    --font-site-title: 'Estonia', 'Italianno', 'Allura', cursive;
     --site-title-plum: #5a3d4f;
 }
 
@@ -57,10 +56,10 @@ body {
     z-index: -1;
 }
 
-/* High-End Empty Hero */
+/* Hero — wordmark: Montserrat light, wide tracking */
 .hero {
     text-align: center;
-    padding: 7rem 1rem 4rem 1rem;
+    padding: 5.75rem 1rem 3.25rem 1rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -90,23 +89,19 @@ h1 {
 }
 
 .title-wrapper h1 {
-    font-family: 'Estonia', 'Italianno', 'Allura', cursive;
-    font-weight: 400;
+    font-family: var(--font-heading);
+    font-weight: 200;
     font-style: normal;
-    text-transform: none;
-    letter-spacing: 0.03em;
-    font-size: clamp(4rem, 13.5vw, 7.25rem);
-    line-height: 1.48;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-size: clamp(1.5rem, 4.2vw, 2.35rem);
+    line-height: 1.2;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
-    color: var(--site-title-plum);
+    color: var(--text-main);
     text-rendering: optimizeLegibility;
-    font-feature-settings: 'kern' 1, 'liga' 1;
-    text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.7),
-        0 2px 8px rgba(62, 38, 55, 0.09),
-        0 20px 56px rgba(110, 72, 98, 0.16);
+    text-shadow: none;
 }
 
 .container {
@@ -653,8 +648,9 @@ hr {
     }
 
     .title-wrapper h1 {
-        font-size: clamp(3.15rem, 12.5vw, 4.6rem);
-        line-height: 1.42;
-        letter-spacing: 0.025em;
+        font-size: clamp(1.2rem, 3.6vw, 1.85rem);
+        line-height: 1.15;
+        letter-spacing: 0.14em;
+        font-weight: 200;
     }
 }
