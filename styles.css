@@ -94,8 +94,8 @@ h1 {
     font-style: normal;
     text-transform: uppercase;
     letter-spacing: 0.28em;
-    font-size: clamp(1.5rem, 4.2vw, 2.35rem);
-    line-height: 1.2;
+    font-size: clamp(2.35rem, 7.2vw, 4.35rem);
+    line-height: 1.15;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
@@ -648,9 +648,9 @@ hr {
     }
 
     .title-wrapper h1 {
-        font-size: clamp(1.2rem, 3.6vw, 1.85rem);
-        line-height: 1.15;
-        letter-spacing: 0.14em;
+        font-size: clamp(2.05rem, 10.5vw, 3.65rem);
+        line-height: 1.12;
+        letter-spacing: 0.12em;
         font-weight: 200;
     }
 }
