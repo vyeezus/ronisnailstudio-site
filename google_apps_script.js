@@ -112,28 +112,27 @@ function clampDurationMinutes_(n) {
   return Math.max(15, Math.min(480, Math.round(x)));
 }
 
+/** yyyy-MM-dd in script TZ: same calendar date exactly one month after today (Mar 31 → Apr 30). */
+function maxPublicBookingDateYmd_() {
+  const tz = Session.getScriptTimeZone();
+  const todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const p = todayStr.split('-');
+  var cal = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10), 12, 0, 0);
+  cal.setMonth(cal.getMonth() + 1);
+  return Utilities.formatDate(cal, tz, 'yyyy-MM-dd');
+}
+
 /**
- * Public website: clients may book only in the current calendar month and the next month (script TZ).
+ * Public website: appointment date must be on or before “one month from today” (script TZ).
+ * Earliest bookable day is still enforced by isDateMeetingBookingLeadTime_ (not today/tomorrow).
  * Admin/owner POST handlers do not use this.
  */
 function isDateInPublicBookingWindow_(yyyyMmDd) {
-  const tz = Session.getScriptTimeZone();
   const raw = String(yyyyMmDd == null ? '' : yyyyMmDd).trim().split('T')[0].split(' ')[0];
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return false;
-  const y = parseInt(m[1], 10);
-  const mo = parseInt(m[2], 10);
-  if (mo < 1 || mo > 12) return false;
-  const now = new Date();
-  const cy = parseInt(Utilities.formatDate(now, tz, 'yyyy'), 10);
-  const cm = parseInt(Utilities.formatDate(now, tz, 'MM'), 10);
-  let ny = cy;
-  let nm = cm + 1;
-  if (nm > 12) {
-    nm = 1;
-    ny++;
-  }
-  return (y === cy && mo === cm) || (y === ny && mo === nm);
+  const maxD = maxPublicBookingDateYmd_();
+  return raw <= maxD;
 }
 
 /** Earliest yyyy-MM-dd for public booking/reschedule (script TZ): not same-day or next calendar day. */

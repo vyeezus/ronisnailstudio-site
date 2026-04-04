@@ -124,6 +124,10 @@ function bootBookingPage() {
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const minBookableStart = new Date(todayStart);
     minBookableStart.setDate(minBookableStart.getDate() + 2);
+    /** Last bookable calendar day: same date one month out (e.g. Apr 3 → May 3). */
+    const maxBookableEnd = new Date(todayStart);
+    maxBookableEnd.setMonth(maxBookableEnd.getMonth() + 1);
+    const maxBookableYmd = `${maxBookableEnd.getFullYear()}-${String(maxBookableEnd.getMonth() + 1).padStart(2, '0')}-${String(maxBookableEnd.getDate()).padStart(2, '0')}`;
     currentYear = today.getFullYear();
     currentMonth = today.getMonth();
 
@@ -132,9 +136,9 @@ function bootBookingPage() {
         return year * 12 + month0;
     }
 
-    /** Earliest month shown in the picker; latest is current + 1 calendar month. */
+    /** Earliest month in the picker; latest month is the one that contains maxBookableYmd. */
     const bookingWindowMinKey = monthKey(today.getFullYear(), today.getMonth());
-    const bookingWindowMaxKey = bookingWindowMinKey + 1;
+    const bookingWindowMaxKey = monthKey(maxBookableEnd.getFullYear(), maxBookableEnd.getMonth());
 
     function addCalendarMonths(year, month0, delta) {
         const d = new Date(year, month0 + delta, 1);
@@ -305,6 +309,7 @@ function bootBookingPage() {
         const p = dateStr.split('-').map(Number);
         const slotDayStart = new Date(p[0], p[1] - 1, p[2]);
         if (slotDayStart < minBookableStart) return false;
+        if (dateStr > maxBookableYmd) return false;
         const hours = dayHours(dayOfWeek);
         if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
@@ -362,6 +367,8 @@ function bootBookingPage() {
             } else if (dateObj < minBookableStart) {
                 btn.classList.add('unavailable');
                 if (dateStr === formatDate(today)) btn.classList.add('today');
+            } else if (dateStr > maxBookableYmd) {
+                btn.classList.add('unavailable');
             } else if (!dayHours(dayOfWeek)) {
                 btn.classList.add('unavailable');
             } else {
@@ -435,6 +442,11 @@ function bootBookingPage() {
         slotsContainer.innerHTML = '';
         const grid = document.createElement('div');
         grid.className = 'slots-grid';
+
+        if (dateStr > maxBookableYmd) {
+            slotsContainer.innerHTML = '';
+            return;
+        }
 
         const hours = dayHours(dayOfWeek);
         if (!hours) {
@@ -582,7 +594,7 @@ function bootBookingPage() {
             const apiMsg = err && err.apiMessage;
             const msg =
                 apiMsg === 'date_outside_booking_window'
-                    ? 'That date isn’t open for booking yet. Please choose a day in this month or next month, then try again.'
+                    ? 'That date is outside the booking window. You can book from two days ahead through one month from today—refresh and choose an open date.'
                     : apiMsg === 'date_too_soon'
                       ? 'Appointments must be booked at least two days in advance (not today or tomorrow). Please pick a later date.'
                       : apiMsg === 'invalid_day_or_time'
