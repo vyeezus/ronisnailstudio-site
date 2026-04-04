@@ -1,0 +1,18 @@
+---
+description: Auto-commit and push after completing edits in this repo
+alwaysApply: true
+---
+
+# Git: commit and push without being asked
+
+When you finish a task that changes files in this project:
+
+1. Run `git status` and stage the relevant files (`git add`).
+2. Commit with a short, clear message (what changed and why).
+3. Push to `origin` on the current branch (usually `main`).
+
+Do this **without waiting** for the user to say “push” or “commit,” unless they explicitly asked **not** to commit, or git push fails (then explain and stop).
+
+Skip auto-commit only when: there is nothing to commit, no `git` remote is configured, or the user is mid-debug and only asked a question with no file edits.
+
+`google_apps_script.js` is tracked in git for backup/history; remind the user that **Google Apps Script** still needs a manual paste + deploy when that file changes.
