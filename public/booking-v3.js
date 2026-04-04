@@ -266,6 +266,8 @@ function bootBookingPage() {
     }
 
     const GAP_THRESHOLD = 60;
+    /** Start times offered on the hour grid (15-minute steps: :00, :15, :30, :45). */
+    const SLOT_START_MINUTES = [0, 15, 30, 45];
 
     /** Local wall time — avoids new Date('yyyy-mm-ddTHH:mm:ss') UTC vs local bugs (Safari / email vs calendar skew). */
     function localWallDateTime(dateStr, hour, minute) {
@@ -313,7 +315,7 @@ function bootBookingPage() {
         const hours = dayHours(dayOfWeek);
         if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
-            for (const m of [0, 30]) {
+            for (const m of SLOT_START_MINUTES) {
                 const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
 
@@ -454,7 +456,7 @@ function bootBookingPage() {
             return;
         }
         for (let h = hours.start; h < hours.end; h++) {
-            for (const m of [0, 30]) {
+            for (const m of SLOT_START_MINUTES) {
                 const timeStr12 = format12h(h, m);
                 const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
