@@ -8,7 +8,7 @@
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    --font-site-title: 'Sacramento', 'Italianno', 'Allura', cursive;
+    --font-site-title: 'Kapakana', 'Italianno', 'Allura', cursive;
     --site-title-plum: #5a3d4f;
 }
 
@@ -94,9 +94,9 @@ h1 {
     font-weight: 400;
     font-style: normal;
     text-transform: none;
-    letter-spacing: 0.035em;
-    font-size: clamp(4.5rem, 15vw, 8.25rem);
-    line-height: 1.28;
+    letter-spacing: 0.025em;
+    font-size: clamp(4.25rem, 14vw, 7.75rem);
+    line-height: 1.34;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
@@ -660,8 +660,8 @@ hr {
         display: inline-block;
         width: auto;
         max-width: none;
-        font-size: clamp(2.55rem, 8vw + 1rem, 6.25rem);
-        line-height: 1.12;
-        letter-spacing: 0.08em;
+        font-size: clamp(2.45rem, 7.5vw + 1rem, 6rem);
+        line-height: 1.18;
+        letter-spacing: 0.065em;
     }
 }
