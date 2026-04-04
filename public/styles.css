@@ -13,7 +13,9 @@ html {
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    --site-title-plum: #5a3d4f; /* legacy; hero title uses --text-main */
+    --site-title-plum: #5a3d4f;
+    /* Hero wordmark — deep purple (not black) */
+    --hero-wordmark-color: #2b1436;
 }
 
 * {
@@ -177,7 +179,7 @@ h1 {
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
-    color: var(--text-main);
+    color: var(--hero-wordmark-color);
     text-rendering: optimizeLegibility;
     text-shadow: none;
 }
@@ -740,13 +742,20 @@ hr {
     .title-wrapper {
         padding-top: 1rem;
         padding-bottom: 2rem;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
     }
 
     .title-wrapper h1 {
-        font-size: clamp(2.05rem, 10.5vw, 3.65rem);
-        line-height: 1.12;
-        letter-spacing: 0.12em;
+        white-space: nowrap;
+        display: inline-block;
+        width: auto;
+        max-width: none;
+        font-size: clamp(1.32rem, 3.85vw + 0.45rem, 2.05rem);
+        line-height: 1.08;
+        letter-spacing: 0.055em;
         font-weight: 200;
+        color: var(--hero-wordmark-color);
     }
 }
 

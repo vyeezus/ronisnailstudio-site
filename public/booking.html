@@ -9,7 +9,7 @@
     <link rel="preload" href="booking-v3.js?v=mobile_booking_v11" as="script">
     <title>Select Time Slot | Roni's Nail Studio</title>
     <meta name="description" content="Choose your preferred date and time for your custom nail service. Select from available slots.">
-    <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-2">
+    <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-3">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         body.page-booking .hero {
@@ -455,11 +455,16 @@
             .hero { padding-top: 4rem; padding-bottom: 2rem; }
             .title-wrapper h1 {
                 font-family: 'Montserrat', sans-serif !important;
-                font-size: clamp(2.05rem, 10.5vw, 3.65rem) !important;
-                letter-spacing: 0.12em !important;
-                line-height: 1.12 !important;
+                white-space: nowrap !important;
+                display: inline-block !important;
+                width: auto !important;
+                max-width: none !important;
+                font-size: clamp(1.32rem, 3.85vw + 0.45rem, 2.05rem) !important;
+                letter-spacing: 0.055em !important;
+                line-height: 1.08 !important;
                 font-weight: 200 !important;
                 text-transform: uppercase !important;
+                color: var(--hero-wordmark-color) !important;
             }
         }
         @media (max-width: 480px) {
