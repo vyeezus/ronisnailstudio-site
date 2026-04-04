@@ -170,7 +170,8 @@ h1 {
 
 /* Hero only: wedding-invitation script — long flourishes, hairline connectors (Estonia family) */
 .title-wrapper h1 {
-    font-family: var(--font-site-title);
+    /* Explicit stack so a stale cached :root var can’t leave an old script face */
+    font-family: 'Estonia', 'Italianno', 'Allura', cursive;
     font-weight: 400;
     font-style: normal;
     text-transform: none;
