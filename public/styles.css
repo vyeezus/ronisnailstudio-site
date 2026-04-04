@@ -751,9 +751,9 @@ hr {
         display: inline-block;
         width: auto;
         max-width: none;
-        font-size: clamp(1.32rem, 3.85vw + 0.45rem, 2.05rem);
-        line-height: 1.08;
-        letter-spacing: 0.055em;
+        font-size: clamp(1.48rem, 5.5vw + 0.5rem, 2.72rem);
+        line-height: 1.06;
+        letter-spacing: 0.038em;
         font-weight: 200;
         color: var(--hero-wordmark-color);
     }
