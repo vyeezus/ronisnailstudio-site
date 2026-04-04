@@ -263,11 +263,18 @@ function bootBookingPage() {
 
     const GAP_THRESHOLD = 60;
 
+    /** Local wall time — avoids new Date('yyyy-mm-ddTHH:mm:ss') UTC vs local bugs (Safari / email vs calendar skew). */
+    function localWallDateTime(dateStr, hour, minute) {
+        const p = dateStr.split('-').map(Number);
+        if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return new Date(NaN);
+        return new Date(p[0], p[1] - 1, p[2], hour, minute, 0);
+    }
+
     function isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr) {
         const hours = dayHours(dayOfWeek);
         if (!hours) return false;
-        const workStart = new Date(`${dateStr}T${String(hours.start).padStart(2, '0')}:00:00`);
-        const workEnd = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
+        const workStart = localWallDateTime(dateStr, hours.start, 0);
+        const workEnd = localWallDateTime(dateStr, hours.end, 0);
 
         let prevEnd = workStart;
         busyTimes.forEach(busy => {
@@ -302,7 +309,7 @@ function bootBookingPage() {
         if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
             for (const m of [0, 30]) {
-                const slotStart = new Date(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+                const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
 
                 const isConflict = busyTimes.some(busy => {
@@ -311,7 +318,7 @@ function bootBookingPage() {
                     return (slotStart < bEnd && slotEnd > bStart);
                 });
 
-                const closingDateTime = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
+                const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
 
                 if (!isConflict && !isOverClosing && !isSlotStartInPastForToday(dateStr, slotStart)) {
@@ -413,7 +420,7 @@ function bootBookingPage() {
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
-        const dateObj = new Date(dateStr + 'T12:00:00');
+        const dateObj = localWallDateTime(dateStr, 12, 0);
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
         requestAnimationFrame(() => {
@@ -437,7 +444,7 @@ function bootBookingPage() {
         for (let h = hours.start; h < hours.end; h++) {
             for (const m of [0, 30]) {
                 const timeStr12 = format12h(h, m);
-                const slotStart = new Date(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+                const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
 
                 const isConflict = busyTimes.some(busy => {
@@ -446,7 +453,7 @@ function bootBookingPage() {
                     return (slotStart < bEnd && slotEnd > bStart);
                 });
 
-                const closingDateTime = new Date(`${dateStr}T${String(hours.end).padStart(2, '0')}:00:00`);
+                const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
                 const isPastToday = isSlotStartInPastForToday(dateStr, slotStart);
                 const isOptimal = isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr);
@@ -578,7 +585,9 @@ function bootBookingPage() {
                     ? 'That date isn’t open for booking yet. Please choose a day in this month or next month, then try again.'
                     : apiMsg === 'date_too_soon'
                       ? 'Appointments must be booked at least two days in advance (not today or tomorrow). Please pick a later date.'
-                      : 'Submission failed. Please try again.';
+                      : apiMsg === 'invalid_day_or_time'
+                        ? 'That day or time isn’t available. Refresh the page and choose an open slot from the calendar.'
+                        : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');

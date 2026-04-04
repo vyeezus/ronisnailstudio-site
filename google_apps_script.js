@@ -57,6 +57,13 @@ function formatSheetDateForEmail(value) {
   if (value instanceof Date) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'EEEE, MMMM d, yyyy');
   }
+  const s = String(value).trim().split('T')[0].split(' ')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const noon = parseYmdAndTimeLocal_(s, '12:00:00');
+    if (!isNaN(noon.getTime())) {
+      return Utilities.formatDate(noon, Session.getScriptTimeZone(), 'EEEE, MMMM d, yyyy');
+    }
+  }
   return String(value).trim();
 }
 
@@ -1175,7 +1182,13 @@ function handleReschedulePost(d) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'event_missing' })).setMimeType(ContentService.MimeType.JSON);
   }
   const durMin = effectiveDurationMinutesFromEvent_(ev);
-  const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
+  const start = parseYmdAndTimeLocal_(rs, convertTo24Hour(d.time));
+  if (isNaN(start.getTime())) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (!isBookingWithinStudioHours_(start, durMin)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_day_or_time' })).setMimeType(ContentService.MimeType.JSON);
+  }
   const newEnd = new Date(start.getTime() + durMin * 60000);
   ev.setTime(start, newEnd);
   ev.setTitle(clientName);
@@ -1279,7 +1292,7 @@ function handleOwnerDirectBooking(d) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !timeStr) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
   }
-  const start = new Date(dateStr + 'T' + convertTo24Hour(timeStr));
+  const start = parseYmdAndTimeLocal_(dateStr, convertTo24Hour(timeStr));
   if (isNaN(start.getTime())) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -1358,14 +1371,24 @@ function doPost(e) {
     if (!isDateMeetingBookingLeadTime_(pubDateStr)) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'date_too_soon' })).setMimeType(ContentService.MimeType.JSON);
     }
+    const timeTrim = String(d.time || '').trim();
+    if (!timeTrim) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_time' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    const start = parseYmdAndTimeLocal_(pubDateStr, convertTo24Hour(timeTrim));
+    if (isNaN(start.getTime())) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    const durMin = clampDurationMinutes_(d.durationMinutes);
+    if (!isBookingWithinStudioHours_(start, durMin)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_day_or_time' })).setMimeType(ContentService.MimeType.JSON);
+    }
     const actionToken = generateActionToken();
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     const row = s.getLastRow() + 1;
-    s.appendRow([new Date(), d.clientName, d.phone, d.service, d.date, d.time, d.email, 'PENDING', '', actionToken, '', '', '', '']);
+    s.appendRow([new Date(), d.clientName, d.phone, d.service, pubDateStr, timeTrim, d.email, 'PENDING', '', actionToken, '', '', '', '']);
     SpreadsheetApp.flush();
     const c = CalendarApp.getCalendarById(CALENDAR_ID);
-    const start = new Date(d.date.toString().split('T')[0] + 'T' + convertTo24Hour(d.time));
-    const durMin = clampDurationMinutes_(d.durationMinutes);
     const end = new Date(start.getTime() + durMin * 60000);
     const desc =
       'Phone: ' +
@@ -1378,12 +1401,10 @@ function doPost(e) {
       durMin;
     const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
     ev.setColor(PENDING_COLOR); s.getRange(row, 9).setValue(ev.getId());
-    
-    // Formatting for Owner Request
-    let rawDate = new Date(d.date);
-    let neatDate = Utilities.formatDate(rawDate, Session.getScriptTimeZone(), "EEEE, MMMM d, yyyy");
-    
-    const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, d.time, ev.getId(), actionToken);
+    const tz = Session.getScriptTimeZone();
+    const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+    const neatTimeEmail = Utilities.formatDate(start, tz, 'h:mm a');
+    const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken);
     MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
     
     return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
@@ -1746,6 +1767,27 @@ function parseYmdAndTimeLocal_(yyyyMmDd, hhMmSs) {
   const mi = parseInt(tp[1], 10) || 0;
   if (isNaN(y) || isNaN(mo) || isNaN(d) || isNaN(h) || isNaN(mi)) return new Date(NaN);
   return new Date(y, mo, d, h, mi, 0);
+}
+
+/**
+ * True if start + duration fits inside studio hours for that calendar day (script project time zone).
+ * Matches public booking rules; owner direct booking skips this check.
+ */
+function isBookingWithinStudioHours_(start, durationMinutes) {
+  if (!(start instanceof Date) || isNaN(start.getTime())) return false;
+  const dm = Number(durationMinutes);
+  if (!isFinite(dm) || dm <= 0) return false;
+  const whAll = getWorkHoursPayload_();
+  const dow = start.getDay();
+  const wh = whAll[String(dow)];
+  if (!wh) return false;
+  const y = start.getFullYear();
+  const mo = start.getMonth();
+  const day = start.getDate();
+  const workStart = new Date(y, mo, day, wh.start, 0, 0);
+  const workEnd = new Date(y, mo, day, wh.end, 0, 0);
+  const slotEnd = new Date(start.getTime() + dm * 60000);
+  return start >= workStart && slotEnd <= workEnd;
 }
 
 function convertTo24Hour(timeStr) {
