@@ -568,6 +568,15 @@ hr {
     max-width: 40rem;
 }
 
+#policy-modal .policy-lead {
+    margin: 0 0 1.15rem 0;
+    max-width: none;
+}
+
+#policy-modal .policy-lead:last-of-type {
+    margin-bottom: 2rem;
+}
+
 .policy-section {
     margin-bottom: 2.5rem;
 }
