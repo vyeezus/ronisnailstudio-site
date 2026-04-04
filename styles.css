@@ -8,7 +8,7 @@
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    --font-site-title: 'Birthstone', 'Great Vibes', cursive;
+    --font-site-title: 'Dancing Script', cursive;
 }
 
 * {
@@ -66,13 +66,18 @@ body {
 }
 
 .title-wrapper {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     margin-bottom: 0;
     border-bottom: 1px solid rgba(178, 115, 154, 0.4);
     padding-bottom: 1.5rem;
+    width: 100%;
+    max-width: min(56rem, 100%);
+    box-sizing: border-box;
+    padding-left: 1rem;
+    padding-right: 1rem;
 }
 
 h1 {
@@ -87,14 +92,19 @@ h1 {
 
 .title-wrapper h1 {
     font-family: var(--font-site-title);
-    font-weight: 400;
+    font-weight: 700;
     font-style: normal;
     text-transform: none;
-    letter-spacing: 0.06em;
-    font-size: clamp(3rem, 12vw, 5.5rem);
-    line-height: 1.12;
-    color: #3d3438;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.02em;
+    font-size: clamp(3.75rem, 14vw, 6.75rem);
+    line-height: 1.08;
+    width: 100%;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    color: #352a30;
+    text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.5),
+        0 2px 24px rgba(119, 78, 120, 0.08);
 }
 
 .container {
@@ -626,7 +636,7 @@ hr {
     }
 
     .title-wrapper h1 {
-        font-size: clamp(2.65rem, 13vw, 3.75rem);
-        letter-spacing: 0.05em;
+        font-size: clamp(3rem, 15vw, 4.5rem);
+        letter-spacing: 0.02em;
     }
 }
