@@ -20,10 +20,10 @@ const SQUARE_SERVICE_MAP = {
     'foreign-soakoff': 'foreign-soakoff',
 
     // Design Tiers (ADD-ON)
-    'tier1': 'QVWJPPNRPTT2BWKDUHXUYBEG',  // Tier 1: Simple Art - $20-40
-    'tier2': 'DWYX3BHATZ6WDHKUNQC23PPP',   // Tier 2: Moderate Art - $40-60
-    'tier3': 'BJM3MWA2GQCZS6HPQFU63XJX',  // Tier 3: Advanced Art - $60-80
-    'tier4': 'NLBDWZQDGENWRCFVHZGPU3HD'    // Tier 4: Extreme Art - $80-100+
+    'tier1': 'QVWJPPNRPTT2BWKDUHXUYBEG',  // Tier 1: Simple Art - $10-20
+    'tier2': 'DWYX3BHATZ6WDHKUNQC23PPP',   // Tier 2: Moderate Art - $20-40
+    'tier3': 'BJM3MWA2GQCZS6HPQFU63XJX',  // Tier 3: Advanced Art - $40-60
+    'tier4': 'NLBDWZQDGENWRCFVHZGPU3HD'    // Tier 4: Extreme Art - $60-80+
 };
 // ------------------------------------------
 
@@ -100,7 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
             totalTime += time;
 
             const name = selectedTier.nextElementSibling.querySelector('h3').innerText.trim();
-            addSummaryItem(name, `+$${pMin} - $${pMax}`);
+            const tierPrice =
+                selectedTier.value === 'tier4' ? `+$${pMin} - $${pMax}+` : `+$${pMin} - $${pMax}`;
+            addSummaryItem(name, tierPrice);
         }
 
         // 3. Foreign soak-off add-on (+$20, no extra appointment time when combined with a base service)
