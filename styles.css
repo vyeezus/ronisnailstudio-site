@@ -8,7 +8,7 @@
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    --font-site-title: 'Dancing Script', cursive;
+    --font-site-title: 'Great Vibes', 'Alex Brush', cursive;
 }
 
 * {
@@ -92,19 +92,19 @@ h1 {
 
 .title-wrapper h1 {
     font-family: var(--font-site-title);
-    font-weight: 700;
+    font-weight: 400;
     font-style: normal;
     text-transform: none;
-    letter-spacing: 0.02em;
-    font-size: clamp(3.75rem, 14vw, 6.75rem);
-    line-height: 1.08;
+    letter-spacing: 0.04em;
+    font-size: clamp(3.5rem, 13vw, 6.25rem);
+    line-height: 1.15;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
-    color: #352a30;
+    color: #3a3336;
     text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.5),
-        0 2px 24px rgba(119, 78, 120, 0.08);
+        0 1px 0 rgba(255, 255, 255, 0.55),
+        0 3px 28px rgba(90, 70, 95, 0.07);
 }
 
 .container {
@@ -636,7 +636,7 @@ hr {
     }
 
     .title-wrapper h1 {
-        font-size: clamp(3rem, 15vw, 4.5rem);
-        letter-spacing: 0.02em;
+        font-size: clamp(2.85rem, 14vw, 4.25rem);
+        letter-spacing: 0.035em;
     }
 }
