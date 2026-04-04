@@ -13,8 +13,8 @@ html {
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    /* Hero: ornate romantic script (Juliette-like swashes; GF Bonheur Royale) */
-    --font-site-title: 'Bonheur Royale', 'Monsieur La Doulaise', cursive;
+    /* Hero: invitation calligraphy — exaggerated ascenders & tails (Estonia / Italianno) */
+    --font-site-title: 'Estonia', 'Italianno', 'Allura', cursive;
     --site-title-plum: #5a3d4f;
 }
 
@@ -133,10 +133,10 @@ body {
     }
 }
 
-/* High-End Empty Hero */
+/* High-End Empty Hero — extra top air for tall invitation script */
 .hero {
     text-align: center;
-    padding: 6rem 1rem 4rem 1rem;
+    padding: 7rem 1rem 4rem 1rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -149,9 +149,9 @@ body {
     justify-content: center;
     margin-bottom: 0;
     border-bottom: 1px solid rgba(178, 115, 154, 0.4);
-    padding: 0.75rem 1rem 1.75rem;
+    padding: 1.25rem 1.25rem 2.35rem;
     width: 100%;
-    max-width: min(64rem, 100%);
+    max-width: min(68rem, 100%);
     box-sizing: border-box;
 }
 
@@ -168,23 +168,25 @@ h1 {
     word-wrap: break-word;
 }
 
-/* Hero only: dramatic brush script — long strokes, hairline/thick contrast (specimen-style) */
+/* Hero only: wedding-invitation script — long flourishes, hairline connectors (Estonia family) */
 .title-wrapper h1 {
     font-family: var(--font-site-title);
     font-weight: 400;
     font-style: normal;
     text-transform: none;
-    letter-spacing: 0.02em;
-    font-size: clamp(3.25rem, 11.5vw, 5.85rem);
-    line-height: 1.28;
+    letter-spacing: 0.03em;
+    font-size: clamp(4rem, 13.5vw, 7.25rem);
+    line-height: 1.48;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
     color: var(--site-title-plum);
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'kern' 1, 'liga' 1;
     text-shadow:
-        0 1px 0 rgba(255, 255, 255, 0.65),
-        0 2px 6px rgba(62, 38, 55, 0.08),
-        0 16px 48px rgba(120, 75, 105, 0.14);
+        0 1px 0 rgba(255, 255, 255, 0.7),
+        0 2px 8px rgba(62, 38, 55, 0.09),
+        0 20px 56px rgba(110, 72, 98, 0.16);
 }
 
 .container {
@@ -725,7 +727,7 @@ hr {
     }
     
     .hero {
-        padding-top: 5rem;
+        padding-top: 5.5rem;
     }
 
     h1 {
@@ -733,14 +735,14 @@ hr {
     }
 
     .title-wrapper {
-        padding-top: 0.5rem;
-        padding-bottom: 1.5rem;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
     }
 
     .title-wrapper h1 {
-        font-size: clamp(2.65rem, 12vw, 3.85rem);
-        line-height: 1.3;
-        letter-spacing: 0.02em;
+        font-size: clamp(3.15rem, 12.5vw, 4.6rem);
+        line-height: 1.42;
+        letter-spacing: 0.025em;
     }
 }
 
