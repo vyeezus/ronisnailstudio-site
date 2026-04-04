@@ -922,7 +922,7 @@ function doGet(e) {
         return htmlPage('Confirmed', '<h2>Already confirmed</h2><p>We already have your confirmation. See you soon!</p>');
       }
       if (rowStatus === 'CANCELLED' || rowStatus === 'REJECTED') {
-        return htmlPage('Cancelled', '<h2>No longer active</h2><p>This appointment is no longer on the schedule.</p>');
+        return htmlPage('Cancelled', '<h2>Cancelled</h2><p>This appointment has been cancelled.</p>');
       }
       return htmlPage('Invalid', '<h2>Link not valid</h2><p>This reminder link only applies to confirmed appointments.</p>');
     }
@@ -1480,7 +1480,7 @@ function getCalendarDeletedClientEmailHtml(name, date, time, service) {
     '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ' +
     n +
     ',</p>' +
-    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Your appointment below is <strong>no longer on the schedule</strong> and has been cancelled.</p>' +
+    '<p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Your appointment below has been <strong>cancelled</strong>.</p>' +
     '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 24px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' +
     rows +
     '</tbody></table>' +
