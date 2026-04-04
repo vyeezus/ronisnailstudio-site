@@ -650,6 +650,16 @@ hr {
     border-bottom: none;
 }
 
+.policy-lead {
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.75;
+    margin: -0.5rem 0 2.5rem 0;
+    max-width: 40rem;
+}
+
 .policy-section {
     margin-bottom: 2.5rem;
 }

@@ -23,6 +23,7 @@
     <main class="container">
         <!-- Unified Policy Section (Instagram Sync Edition) 💅✨ -->
         <section class="guidelines-section">
+            <p class="editorial-intro">If you're a new client, please reach out to me via DM before booking an appointment. Any appointments booked from new clients will not be accepted before consultation.</p>
             <p class="editorial-intro">To provide the most premium and curated experience for every client, please review our standard policy before booking.</p>
             
             <div class="guidelines-grid">
@@ -56,25 +57,19 @@
                 
                 <div class="guide-column">
                     <div class="guide-item">
-                        <h3>Booking</h3>
-                        <ul>
-                            <li>Online booking opens dates from two days ahead through <strong>one month from today</strong> (same calendar date next month).</li>
-                        </ul>
-                    </div>
-                    <div class="guide-item">
                         <h3>Service Info</h3>
                         <ul>
                             <li>To inquire about <strong>weekend availability</strong>, please contact me directly—those times are not shown on the public calendar.</li>
                             <li>Appointments typically last 1 to 2.5 hours. Intricate designs may take 3+ hours.</li>
                             <li>Pricing is determined by the level of difficulty and time required.</li>
                             <li>Refills are recommended every 3 weeks. Anything 4+ weeks is charged as a new set.</li>
-                            <li>Please send inspo pics 2-3 days before your appointment so I can prep. Inspo pics guide the look, but exact replicas are not always possible. No freestyles.</li>
+                            <li>Please send inspo pics 2-3 days before your appointment. Exact replicas are not always possible. No freestyles.</li>
                         </ul>
                     </div>
                     <div class="guide-item">
                         <h3>Studio Standards</h3>
                         <ul>
-                            <li>Cash or Zelle only. Cash is preferred. Tips are Venmo or Cash only.</li>
+                            <li>Cash or Zelle only. <strong>$5 discount</strong> when paying cash. Tips are Venmo or Cash only.</li>
                             <li>Private 1:1 studio. No guests or children unless arranged prior.</li>
                             <li>I do not work on nails with severe damage or open wounds.</li>
                         </ul>
@@ -240,8 +235,11 @@
     <script>
         // Copy main guidelines into modal for perfect synchronization
         document.addEventListener('DOMContentLoaded', () => {
-            const body = document.querySelector('.guidelines-grid').cloneNode(true);
-            document.getElementById('modal-policy-body').appendChild(body);
+            const modalBody = document.getElementById('modal-policy-body');
+            document.querySelectorAll('.guidelines-section .editorial-intro').forEach((p) => {
+                modalBody.appendChild(p.cloneNode(true));
+            });
+            modalBody.appendChild(document.querySelector('.guidelines-grid').cloneNode(true));
         });
     </script>
 </body>
