@@ -13,8 +13,8 @@ html {
     --button-bg: #c78eb1; /* Pastel luxurious pinky/mauve */
     --font-heading: 'Montserrat', sans-serif;
     --font-body: 'Inter', sans-serif;
-    /* Hero: flourished script (Ephesis) */
-    --font-site-title: 'Ephesis', 'Italianno', 'Allura', cursive;
+    /* Hero: invitation calligraphy — exaggerated ascenders & tails (Estonia / Italianno) */
+    --font-site-title: 'Estonia', 'Italianno', 'Allura', cursive;
     --site-title-plum: #5a3d4f;
 }
 
@@ -168,15 +168,15 @@ h1 {
     word-wrap: break-word;
 }
 
-/* Hero only: Ephesis + fallbacks (tall flourishes — extra line-height) */
+/* Hero only: wedding-invitation script — long flourishes, hairline connectors (Estonia family) */
 .title-wrapper h1 {
     font-family: var(--font-site-title);
     font-weight: 400;
     font-style: normal;
     text-transform: none;
-    letter-spacing: 0.02em;
-    font-size: clamp(3.85rem, 12.5vw, 6.85rem);
-    line-height: 1.42;
+    letter-spacing: 0.03em;
+    font-size: clamp(4rem, 13.5vw, 7.25rem);
+    line-height: 1.48;
     width: 100%;
     max-width: 100%;
     overflow-wrap: anywhere;
@@ -747,19 +747,12 @@ hr {
     .title-wrapper {
         padding-top: 1rem;
         padding-bottom: 2rem;
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
-        align-items: center;
     }
 
     .title-wrapper h1 {
-        white-space: nowrap;
-        display: inline-block;
-        width: auto;
-        max-width: none;
-        font-size: clamp(2.2rem, 6.8vw + 0.85rem, 5.25rem);
-        line-height: 1.22;
-        letter-spacing: 0.055em;
+        font-size: clamp(3.15rem, 12.5vw, 4.6rem);
+        line-height: 1.42;
+        letter-spacing: 0.025em;
     }
 }
 
