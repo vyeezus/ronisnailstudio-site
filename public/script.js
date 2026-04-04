@@ -16,6 +16,9 @@ const SQUARE_SERVICE_MAP = {
     'gx-removal-medium': 'B2GELF7B25XZVBXG5IZE6F2L',  // Removal + Gel X Medium - $90
     'gx-removal-long': 'C3LDH3JNIKUUAQN3IOIQK5YH',    // Removal + Gel X Long - $100
 
+    // Removals — replace with your Square catalog ID when available
+    'foreign-soakoff': 'foreign-soakoff',
+
     // Design Tiers (ADD-ON)
     'tier1': 'QVWJPPNRPTT2BWKDUHXUYBEG',  // Tier 1: Simple Art - $20-40
     'tier2': 'DWYX3BHATZ6WDHKUNQC23PPP',   // Tier 2: Moderate Art - $40-60
