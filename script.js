@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Booking Form Selectors
     const baseServices = document.querySelectorAll('input[name="base-service"]');
     const designTiers = document.querySelectorAll('input[name="design-tier"]');
+    const foreignSoakoffCb = document.querySelector('input[name="addon-foreign-soakoff"]');
     
     // Summary Selectors
     const summaryItems = document.getElementById('summary-items');
@@ -87,6 +88,16 @@ document.addEventListener('DOMContentLoaded', () => {
             addSummaryItem(name, `+$${pMin} - $${pMax}`);
         }
 
+        const foreignCb = document.querySelector('input[name="addon-foreign-soakoff"]');
+        if (foreignCb && foreignCb.checked) {
+            minPrice += 20;
+            maxPrice += 20;
+            addSummaryItem('Foreign soak-off removal', '+$20');
+            if (!selectedBase) {
+                totalTime = 15;
+            }
+        }
+
         // Update DOM
         if (minPrice === maxPrice) {
             totalPriceEl.innerText = `$${minPrice}`;
@@ -94,7 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
             totalPriceEl.innerText = `$${minPrice} - $${maxPrice}`;
         }
         
-        totalTimeEl.innerText = formatTime(totalTime);
+        totalTimeEl.innerText = totalTime > 0 ? formatTime(totalTime) : '—';
+        updateBookButton();
     }
 
     function addSummaryItem(name, priceStr) {
@@ -107,14 +119,22 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryItems.appendChild(li);
     }
 
+    function hasBookableSelection_() {
+        const base = document.querySelector('input[name="base-service"]:checked');
+        const fo = document.querySelector('input[name="addon-foreign-soakoff"]');
+        return !!(base || (fo && fo.checked));
+    }
+
     /* --- POLICY LOGIC --- */
     function updateBookButton() {
-        bookBtn.disabled = !policyCheckbox.checked;
+        bookBtn.disabled = !policyCheckbox.checked || !hasBookableSelection_();
     }
 
     policyCheckbox.addEventListener('change', updateBookButton);
 
     bookBtn.addEventListener('click', () => {
+        if (!hasBookableSelection_()) return;
+
         let squareServices = [];
         let serviceNames = [];
 
@@ -130,6 +150,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedTier && selectedTier.value !== 'none' && SQUARE_SERVICE_MAP[selectedTier.value]) {
             squareServices.push(SQUARE_SERVICE_MAP[selectedTier.value]);
             serviceNames.push(selectedTier.nextElementSibling.querySelector('h3').innerText.trim());
+        }
+
+        const foreignCbGo = document.querySelector('input[name="addon-foreign-soakoff"]');
+        if (foreignCbGo && foreignCbGo.checked && SQUARE_SERVICE_MAP['foreign-soakoff']) {
+            squareServices.push(SQUARE_SERVICE_MAP['foreign-soakoff']);
+            serviceNames.push('Foreign soak-off removal');
         }
 
         // Build Square URL with service IDs
@@ -172,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Form Event listeners
     baseServices.forEach(el => el.addEventListener('change', calculateTotal));
     designTiers.forEach(el => el.addEventListener('change', calculateTotal));
+    if (foreignSoakoffCb) foreignSoakoffCb.addEventListener('change', calculateTotal);
 
     // Initial calculation setup
     calculateTotal();
