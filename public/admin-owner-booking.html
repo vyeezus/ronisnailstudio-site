@@ -93,6 +93,12 @@
         }
         .admin-book-page textarea { min-height: 4rem; resize: vertical; }
         .admin-book-page input:focus, .admin-book-page textarea:focus { outline: none; border-color: var(--text-accent); }
+        .admin-service-fields { margin-bottom: 0.5rem; }
+        .admin-service-fields .booking-form { max-width: none; gap: 1.35rem; }
+        .admin-service-fields .form-section { padding: 1.65rem 1.35rem; }
+        .admin-service-fields .form-section h2 { font-size: 1.05rem; margin-bottom: 1rem; padding-bottom: 0.65rem; }
+        .admin-service-fields .list-row { padding: 1rem 0.35rem; }
+        .admin-duration-hint { font-size: 0.78rem; color: var(--text-muted); margin: -0.55rem 0 0.85rem; }
         .secret-block { margin-bottom: 1.25rem; }
         .lookup-block { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(178, 115, 154, 0.12); }
         .match-list { list-style: none; margin: 0.5rem 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
@@ -184,8 +190,117 @@
             <input type="tel" id="client-phone" autocomplete="tel">
             <label for="client-email">Email</label>
             <input type="email" id="client-email" required autocomplete="email">
-            <label for="service">Service description</label>
-            <textarea id="service" required placeholder="e.g. Structured Gel refill + Tier 2 art"></textarea>
+            <span class="cal-embed-label" style="margin-top:0.25rem;">Service <span style="font-weight:400; text-transform:none; letter-spacing:0;">(same options as the booking site)</span></span>
+            <div id="admin-service-fields" class="admin-service-fields">
+            <div class="booking-form">
+            <section class="form-section">
+                <h2>01. Base Service</h2>
+                <h3 class="category-label">Gel Overlay</h3>
+                <p class="category-desc">Structured gel on natural nails (no extensions) — added strength with a lightweight feel</p>
+                <div class="service-list">
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="sg-new" data-price="80" data-time="75" checked>
+                        <div class="row-content">
+                            <div class="row-info"><h3>Structured Gel New Set</h3></div>
+                            <div class="row-meta"><span class="price">$80</span><span class="time">~ 1h 15m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="sg-refill" data-price="75" data-time="75">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Structured Gel Refill</h3><p class="desc">Within 3-4 weeks</p></div>
+                            <div class="row-meta"><span class="price">$75</span><span class="time">~ 1h 15m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="sg-removal-new" data-price="90" data-time="105">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Structured Gel Removal + New Set</h3></div>
+                            <div class="row-meta"><span class="price">$90</span><span class="time">~ 1h 45m</span></div>
+                        </div>
+                    </label>
+                </div>
+                <h3 class="category-label" style="margin-top: 2rem;">Gel Extensions</h3>
+                <p class="category-desc">Soft gel nail tips using Aprés — switch up lengths & shapes with an elegant natural look</p>
+                <div class="service-list">
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="gx-short" data-price="75" data-time="75">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Gel X Short</h3></div>
+                            <div class="row-meta"><span class="price">$75</span><span class="time">~ 1h 15m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="gx-medium" data-price="80" data-time="75">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Gel X Medium</h3></div>
+                            <div class="row-meta"><span class="price">$80</span><span class="time">~ 1h 15m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-base-service" value="gx-long" data-price="90" data-time="75">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Gel X Long</h3></div>
+                            <div class="row-meta"><span class="price">$90</span><span class="time">~ 1h 15m</span></div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+            <section class="form-section">
+                <h2>02. Design Tier <span class="subtitle">(Add-on)</span></h2>
+                <div class="service-list tiers">
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-design-tier" value="none" data-price-min="0" data-price-max="0" data-time="0" checked>
+                        <div class="row-content">
+                            <div class="row-info"><h3>No Design</h3><p class="desc">Clean classic look</p></div>
+                            <div class="row-meta"><span class="price">$0</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-design-tier" value="tier1" data-price-min="10" data-price-max="20" data-time="15">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Tier 1: Simple Art</h3><p class="desc">Small accents, minimal layering — e.g. chrome, French, ombré, aura, cat-eye</p></div>
+                            <div class="row-meta"><span class="price">+$10 - $20</span><span class="time">~ 15m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-design-tier" value="tier2" data-price-min="20" data-price-max="40" data-time="30">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Tier 2: Moderate Art</h3><p class="desc">Moderate layering, 3D elements, gems and/or medium accent such as sculpted flower</p></div>
+                            <div class="row-meta"><span class="price">+$20 - $40</span><span class="time">~ 30m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-design-tier" value="tier3" data-price-min="40" data-price-max="60" data-time="45">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Tier 3: Advanced Art</h3><p class="desc">Intricate multiple elements, bolder 3D, layering</p></div>
+                            <div class="row-meta"><span class="price">+$40 - $60</span><span class="time">~ 45m</span></div>
+                        </div>
+                    </label>
+                    <label class="list-row luxury-radio">
+                        <input type="radio" name="admin-design-tier" value="tier4" data-price-min="60" data-price-max="80" data-time="60">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Tier 4: Extreme Art</h3><p class="desc">Maximalist heavy layering, charms, sculpted</p></div>
+                            <div class="row-meta"><span class="price">+$60 - $80+</span><span class="time">~ 1h</span></div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+            <section class="form-section">
+                <h2>03. Removals <span class="subtitle">(Add-on)</span></h2>
+                <p class="category-desc">No acrylic removals.</p>
+                <div class="service-list">
+                    <label class="list-row luxury-checkbox">
+                        <input type="checkbox" name="admin-addon-foreign-soakoff" value="1">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Foreign soak-off removal</h3></div>
+                            <div class="row-meta"><span class="price">+$20</span></div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+            </div>
+            </div>
             <label for="appt-date">Date</label>
             <div class="input-date-wrap">
                 <input type="date" id="appt-date" required>
@@ -193,7 +308,8 @@
             <label for="appt-time">Time</label>
             <input type="text" id="appt-time" required placeholder="2:30 PM">
             <label for="duration">Duration (minutes)</label>
-            <input type="number" id="duration" min="15" max="480" step="15" value="60">
+            <p id="admin-duration-hint" class="admin-duration-hint" aria-live="polite"></p>
+            <input type="number" id="duration" min="15" max="480" step="15" value="75">
             <div class="btn-row">
                 <button type="button" class="cute-btn" id="btn-submit">Create booking &amp; send email</button>
             </div>
@@ -242,11 +358,86 @@
             var clientName = document.getElementById('client-name');
             var clientPhone = document.getElementById('client-phone');
             var clientEmail = document.getElementById('client-email');
-            var service = document.getElementById('service');
             var apptDate = document.getElementById('appt-date');
             var apptTime = document.getElementById('appt-time');
             var duration = document.getElementById('duration');
+            var durationHint = document.getElementById('admin-duration-hint');
             var btnSubmit = document.getElementById('btn-submit');
+            var adminServiceRoot = document.getElementById('admin-service-fields');
+
+            /** Same rules as public/script.js calculateTotal() for appointment length. */
+            function formatAdminTime(minutes) {
+                var h = Math.floor(minutes / 60);
+                var m = minutes % 60;
+                if (h > 0 && m > 0) return h + 'h ' + m + 'm';
+                if (h > 0) return h + 'h';
+                return m + 'm';
+            }
+
+            function hasAdminBookableSelection() {
+                var base = adminServiceRoot && adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
+                var fo = adminServiceRoot && adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
+                return !!(base || (fo && fo.checked));
+            }
+
+            function buildAdminServiceDescription() {
+                if (!adminServiceRoot) return '';
+                var parts = [];
+                var selectedBase = adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
+                if (selectedBase) {
+                    var h3 = selectedBase.nextElementSibling && selectedBase.nextElementSibling.querySelector('h3');
+                    if (h3) parts.push(h3.innerText.trim());
+                }
+                var selectedTier = adminServiceRoot.querySelector('input[name="admin-design-tier"]:checked');
+                if (selectedTier && selectedTier.value !== 'none') {
+                    var th3 = selectedTier.nextElementSibling && selectedTier.nextElementSibling.querySelector('h3');
+                    if (th3) parts.push(th3.innerText.trim());
+                }
+                var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
+                if (foreignCb && foreignCb.checked) {
+                    parts.push('Foreign soak-off removal');
+                }
+                return parts.join(' · ');
+            }
+
+            function recalcAdminDuration() {
+                if (!adminServiceRoot || !duration) return;
+                var totalTime = 0;
+                var selectedBase = adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
+                if (selectedBase) {
+                    totalTime += parseInt(selectedBase.getAttribute('data-time'), 10) || 0;
+                }
+                var selectedTier = adminServiceRoot.querySelector('input[name="admin-design-tier"]:checked');
+                if (selectedTier && selectedTier.value !== 'none') {
+                    totalTime += parseInt(selectedTier.getAttribute('data-time'), 10) || 0;
+                }
+                var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
+                if (foreignCb && foreignCb.checked) {
+                    if (!selectedBase) {
+                        totalTime = 15;
+                    }
+                }
+                if (totalTime > 0) {
+                    duration.value = String(totalTime);
+                    if (durationHint) {
+                        durationHint.textContent =
+                            'From your selections: ' + totalTime + ' min (~' + formatAdminTime(totalTime) + '). You can still edit the number if needed.';
+                    }
+                } else {
+                    if (durationHint) {
+                        durationHint.textContent = 'Pick a base service or foreign soak-off to set duration.';
+                    }
+                }
+            }
+
+            function wireAdminServiceRecalc() {
+                if (!adminServiceRoot) return;
+                adminServiceRoot.addEventListener('change', function () {
+                    recalcAdminDuration();
+                });
+                recalcAdminDuration();
+            }
+            wireAdminServiceRecalc();
 
             try {
                 var saved = localStorage.getItem(STORAGE_KEY);
@@ -404,15 +595,19 @@
                 var name = clientName.value.trim();
                 var phone = clientPhone.value.trim();
                 var email = clientEmail.value.trim();
-                var svc = service.value.trim();
+                var svc = buildAdminServiceDescription().trim();
                 var d = apptDate.value;
                 var t = apptTime.value.trim();
                 var dur = parseInt(duration.value, 10);
-                if (!name || !email || !svc || !d || !t) {
-                    setMsg(false, 'Fill name, email, service, date, and time.');
+                if (!name || !email || !d || !t) {
+                    setMsg(false, 'Fill name, email, date, and time.');
                     return;
                 }
-                if (isNaN(dur) || dur < 15) dur = 60;
+                if (!hasAdminBookableSelection() || !svc) {
+                    setMsg(false, 'Choose a base service and/or foreign soak-off (same as the public booking page).');
+                    return;
+                }
+                if (isNaN(dur) || dur < 15) dur = 75;
 
                 try {
                     if (rememberCb.checked) localStorage.setItem(STORAGE_KEY, secret);
@@ -447,8 +642,17 @@
                     .then(function (data) {
                         if (data && data.status === 'success') {
                             setMsg(true, 'Booked. Client confirmation sent. You should get a copy at the studio inbox.');
-                            service.value = '';
                             apptTime.value = '';
+                            if (adminServiceRoot) {
+                                adminServiceRoot.querySelectorAll('input[name="admin-base-service"]').forEach(function (inp) {
+                                    inp.checked = inp.value === 'sg-new';
+                                });
+                                var noneTier = adminServiceRoot.querySelector('input[name="admin-design-tier"][value="none"]');
+                                if (noneTier) noneTier.checked = true;
+                                var fo = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
+                                if (fo) fo.checked = false;
+                                recalcAdminDuration();
+                            }
                         } else if (data && data.message === 'unauthorized') {
                             setMsg(false, 'Wrong admin secret.');
                         } else if (data && data.message === 'bad_datetime') {
