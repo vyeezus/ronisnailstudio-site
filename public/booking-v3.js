@@ -394,6 +394,81 @@ function bootBookingPage() {
         return false;
     }
 
+    function mergeBusyIntervals(intervals) {
+        if (!intervals.length) return [];
+        const sorted = intervals.slice().sort((a, b) => a.start - b.start);
+        const out = [{ start: sorted[0].start, end: sorted[0].end }];
+        for (let i = 1; i < sorted.length; i++) {
+            const cur = sorted[i];
+            const last = out[out.length - 1];
+            if (cur.start <= last.end) last.end = Math.max(last.end, cur.end);
+            else out.push({ start: cur.start, end: cur.end });
+        }
+        return out;
+    }
+
+    function busySegmentsForDay(dateStr) {
+        const day0 = localWallDateTime(dateStr, 0, 0);
+        const day1 = new Date(day0.getTime() + 86400000);
+        const out = [];
+        busyTimes.forEach(b => {
+            const bs = new Date(b.start);
+            const be = new Date(b.end);
+            const s = Math.max(bs.getTime(), day0.getTime());
+            const e = Math.min(be.getTime(), day1.getTime());
+            if (e > s) out.push({ start: s, end: e });
+        });
+        return mergeBusyIntervals(out);
+    }
+
+    function weekTimelineHourBounds(weekSunday) {
+        let minH = 24;
+        let maxH = 0;
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekSunday);
+            d.setDate(d.getDate() + i);
+            const dateStr = formatDate(d);
+            const wh = dayHours(d.getDay());
+            if (wh) {
+                minH = Math.min(minH, wh.start);
+                maxH = Math.max(maxH, wh.end);
+            }
+            busySegmentsForDay(dateStr).forEach(seg => {
+                const s = new Date(seg.start);
+                const e = new Date(seg.end);
+                minH = Math.min(minH, s.getHours());
+                const endH = e.getHours() + (e.getMinutes() > 0 || e.getSeconds() > 0 ? 1 : 0);
+                maxH = Math.max(maxH, endH);
+            });
+        }
+        if (minH >= maxH) {
+            minH = 8;
+            maxH = 19;
+        }
+        minH = Math.max(0, minH - 1);
+        maxH = Math.min(24, maxH + 1);
+        return { startHour: minH, endHour: maxH };
+    }
+
+    function blockLayoutMs(dateStr, segStartMs, segEndMs, startHour, endHour, totalPx) {
+        const t0 = localWallDateTime(dateStr, startHour, 0).getTime();
+        const t1 = localWallDateTime(dateStr, endHour, 0).getTime();
+        const span = t1 - t0;
+        if (span <= 0) return null;
+        const s = Math.max(segStartMs, t0);
+        const e = Math.min(segEndMs, t1);
+        if (e <= s) return null;
+        const top = ((s - t0) / span) * totalPx;
+        const h = ((e - s) / span) * totalPx;
+        return { top, height: Math.max(3, h) };
+    }
+
+    function formatHourLabel12(hour) {
+        const h12 = hour % 12 || 12;
+        const ap = hour < 12 ? 'AM' : 'PM';
+        return `${h12} ${ap}`;
+    }
+
     function formatWeekRangeLabel() {
         const end = new Date(weekViewSunday);
         end.setDate(end.getDate() + 6);
@@ -487,14 +562,70 @@ function bootBookingPage() {
         calWeekGrid.innerHTML = '';
         monthLabel.textContent = formatWeekRangeLabel();
 
+        const { startHour, endHour } = weekTimelineHourBounds(weekViewSunday);
+        const PX_PER_H = 52;
+        const bodyHeight = (endHour - startHour) * PX_PER_H;
+        const todayStr = formatDate(today);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'cal-week-timeline-wrap';
+
+        const scroll = document.createElement('div');
+        scroll.className = 'cal-week-timeline-scroll';
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'cal-week-timeline-header-row';
+        const corner = document.createElement('div');
+        corner.className = 'cal-week-timeline-corner';
+        corner.setAttribute('aria-hidden', 'true');
+        headerRow.appendChild(corner);
+
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekViewSunday);
             d.setDate(d.getDate() + i);
+            const dateStr = formatDate(d);
             const dow = d.getDay();
-            const dowEl = document.createElement('div');
-            dowEl.className = 'cal-week-dow' + (dow === 0 || dow === 6 ? ' is-weekend' : '');
-            dowEl.textContent = DAYS[dow];
-            calWeekGrid.appendChild(dowEl);
+            const hcell = document.createElement('div');
+            hcell.className = 'cal-week-head-cell';
+            if (dow === 0 || dow === 6) hcell.classList.add('is-weekend');
+            if (dateStr === todayStr) hcell.classList.add('is-today-head');
+            const dowSpan = document.createElement('span');
+            dowSpan.className = 'cal-week-head-dow';
+            dowSpan.textContent = DAYS[dow];
+            const domSpan = document.createElement('span');
+            domSpan.className = 'cal-week-head-dom';
+            domSpan.textContent = String(d.getDate());
+            hcell.appendChild(dowSpan);
+            hcell.appendChild(domSpan);
+            headerRow.appendChild(hcell);
+        }
+        scroll.appendChild(headerRow);
+
+        const body = document.createElement('div');
+        body.className = 'cal-week-timeline-body';
+
+        const timeGutter = document.createElement('div');
+        timeGutter.className = 'cal-week-time-gutter';
+        timeGutter.style.height = `${bodyHeight}px`;
+        for (let h = startHour; h < endHour; h++) {
+            const lab = document.createElement('div');
+            lab.className = 'cal-week-time-label';
+            lab.style.top = `${(h - startHour) * PX_PER_H}px`;
+            lab.textContent = formatHourLabel12(h);
+            timeGutter.appendChild(lab);
+        }
+        body.appendChild(timeGutter);
+
+        const colsWrap = document.createElement('div');
+        colsWrap.className = 'cal-week-cols-wrap';
+        colsWrap.style.height = `${bodyHeight}px`;
+
+        function appendDimLayer(layer, lay) {
+            const dim = document.createElement('div');
+            dim.className = 'cal-week-dim';
+            dim.style.top = `${lay.top}px`;
+            dim.style.height = `${lay.height}px`;
+            layer.appendChild(dim);
         }
 
         for (let i = 0; i < 7; i++) {
@@ -502,44 +633,124 @@ function bootBookingPage() {
             d.setDate(d.getDate() + i);
             const dateStr = formatDate(d);
             const dayOfWeek = d.getDay();
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'cal-day cal-week-day';
+            const wh = dayHours(dayOfWeek);
 
-            const domSpan = document.createElement('span');
-            domSpan.className = 'cal-week-dom';
-            domSpan.textContent = String(d.getDate());
-            const hint = document.createElement('span');
-            hint.className = 'cal-week-hint';
-            btn.appendChild(domSpan);
-            btn.appendChild(hint);
+            const col = document.createElement('div');
+            col.className = 'cal-week-col';
+            col.dataset.calDate = dateStr;
+            if (selectedDate === dateStr) col.classList.add('is-selected');
 
-            if (stripTimeLocal(d) < todayStart) {
-                btn.classList.add('past');
-                hint.textContent = '';
-            } else if (stripTimeLocal(d) < minBookableStart) {
-                btn.classList.add('unavailable');
-                hint.textContent = 'Too soon';
-            } else if (dateStr > maxBookableYmd) {
-                btn.classList.add('unavailable');
-                hint.textContent = '—';
-            } else if (!dayHours(dayOfWeek)) {
-                btn.classList.add('unavailable');
-                hint.textContent = 'Closed';
-            } else if (!hasAnyAvailableSlot(dateStr, dayOfWeek)) {
-                btn.classList.add('unavailable');
-                hint.textContent = 'Full';
+            const hit = document.createElement('button');
+            hit.type = 'button';
+            hit.className = 'cal-week-col-hit';
+            hit.style.minHeight = `${bodyHeight}px`;
+
+            const colInner = document.createElement('div');
+            colInner.className = 'cal-week-col-inner';
+            colInner.style.height = `${bodyHeight}px`;
+
+            const gridBg = document.createElement('div');
+            gridBg.className = 'cal-week-col-grid';
+            gridBg.style.height = `${bodyHeight}px`;
+            for (let h = startHour; h < endHour; h++) {
+                const line = document.createElement('div');
+                line.className = 'cal-week-hour-line';
+                line.style.top = `${(h - startHour) * PX_PER_H}px`;
+                gridBg.appendChild(line);
+            }
+
+            const layer = document.createElement('div');
+            layer.className = 'cal-week-busy-layer';
+            layer.style.height = `${bodyHeight}px`;
+
+            if (wh) {
+                const t0 = localWallDateTime(dateStr, startHour, 0).getTime();
+                const t1 = localWallDateTime(dateStr, endHour, 0).getTime();
+                const tOpen = localWallDateTime(dateStr, wh.start, 0).getTime();
+                const tClose = localWallDateTime(dateStr, wh.end, 0).getTime();
+                if (tOpen > t0) {
+                    const lay = blockLayoutMs(dateStr, t0, tOpen, startHour, endHour, bodyHeight);
+                    if (lay) appendDimLayer(layer, lay);
+                }
+                if (tClose < t1) {
+                    const lay = blockLayoutMs(dateStr, tClose, t1, startHour, endHour, bodyHeight);
+                    if (lay) appendDimLayer(layer, lay);
+                }
             } else {
-                btn.classList.add('available');
-                hint.textContent = 'Open';
-                if (selectedDate === dateStr) btn.classList.add('selected');
-                btn.addEventListener('click', () => selectDate(dateStr, btn, dayOfWeek));
+                const dimFull = document.createElement('div');
+                dimFull.className = 'cal-week-dim cal-week-dim-full';
+                dimFull.style.height = `${bodyHeight}px`;
+                layer.appendChild(dimFull);
             }
-            if (dateStr === formatDate(today) && !btn.classList.contains('past')) {
-                btn.classList.add('today');
+
+            busySegmentsForDay(dateStr).forEach(seg => {
+                const lay = blockLayoutMs(dateStr, seg.start, seg.end, startHour, endHour, bodyHeight);
+                if (!lay) return;
+                const blk = document.createElement('div');
+                blk.className = 'cal-week-busy-block';
+                blk.style.top = `${lay.top}px`;
+                blk.style.height = `${lay.height}px`;
+                blk.title = 'Booked / unavailable';
+                layer.appendChild(blk);
+            });
+
+            const selectable =
+                stripTimeLocal(d) >= todayStart &&
+                stripTimeLocal(d) >= minBookableStart &&
+                dateStr <= maxBookableYmd &&
+                wh &&
+                hasAnyAvailableSlot(dateStr, dayOfWeek);
+
+            if (!selectable) {
+                hit.disabled = true;
+                hit.classList.add('is-disabled');
+                col.classList.add('is-disabled');
             }
-            calWeekGrid.appendChild(btn);
+            hit.setAttribute(
+                'aria-label',
+                selectable ? `Select ${dateStr} to see open times` : `${dateStr} is not available to book`
+            );
+
+            colInner.appendChild(gridBg);
+            colInner.appendChild(layer);
+            hit.appendChild(colInner);
+            hit.addEventListener('click', () => {
+                if (!hit.disabled) selectDate(dateStr, null, dayOfWeek);
+            });
+
+            col.appendChild(hit);
+            colsWrap.appendChild(col);
         }
+
+        let nowCol = -1;
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekViewSunday);
+            d.setDate(d.getDate() + i);
+            if (formatDate(d) === todayStr) {
+                nowCol = i;
+                break;
+            }
+        }
+        if (nowCol >= 0) {
+            const t0 = localWallDateTime(todayStr, startHour, 0).getTime();
+            const t1 = localWallDateTime(todayStr, endHour, 0).getTime();
+            const nowMs = Date.now();
+            if (nowMs >= t0 && nowMs <= t1) {
+                const top = ((nowMs - t0) / (t1 - t0)) * bodyHeight;
+                const line = document.createElement('div');
+                line.className = 'cal-week-now-line';
+                line.style.top = `${top}px`;
+                line.style.left = `${(100 / 7) * nowCol}%`;
+                line.style.width = `${100 / 7}%`;
+                colsWrap.appendChild(line);
+            }
+        }
+
+        body.appendChild(colsWrap);
+        scroll.appendChild(body);
+        wrap.appendChild(scroll);
+        calWeekGrid.appendChild(wrap);
+
         updateCalNavState();
     }
 
@@ -610,6 +821,11 @@ function bootBookingPage() {
         customerSection.style.display = 'none';
         confirmBtn.disabled = true;
         document.querySelectorAll('.cal-day.selected').forEach(el => el.classList.remove('selected'));
+        if (calWeekGrid) {
+            calWeekGrid.querySelectorAll('.cal-week-col.is-selected').forEach(el => el.classList.remove('is-selected'));
+            const wcol = calWeekGrid.querySelector(`.cal-week-col[data-cal-date="${dateStr}"]`);
+            if (wcol) wcol.classList.add('is-selected');
+        }
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
