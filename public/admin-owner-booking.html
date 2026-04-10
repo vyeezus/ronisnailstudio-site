@@ -151,6 +151,120 @@
         @keyframes owner-admin-spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Native week view (Apps Script JSON — works on iPhone) */
+        .admin-native-cal {
+            margin-bottom: 1rem;
+            padding: 0.85rem 0.75rem 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(178, 115, 154, 0.22);
+            background: rgba(255, 255, 255, 0.65);
+        }
+        .admin-native-cal-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem 0.65rem;
+            margin-bottom: 0.85rem;
+        }
+        .admin-native-cal-toolbar button {
+            font-family: var(--font-body);
+            border: 1px solid rgba(178, 115, 154, 0.35);
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 0.45rem 0.75rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            color: var(--text-main);
+        }
+        .admin-native-cal-toolbar button:hover {
+            border-color: var(--text-accent);
+            color: var(--text-accent);
+        }
+        .admin-native-cal-toolbar button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .admin-cal-week-label {
+            flex: 1;
+            min-width: 0;
+            font-family: var(--font-body);
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-main);
+            text-align: center;
+        }
+        .admin-cal-refresh {
+            margin-left: auto;
+        }
+        .admin-cal-week-by-day {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            max-height: min(55vh, 480px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .admin-cal-day-block {
+            border-radius: 10px;
+            padding: 0.55rem 0.65rem;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid rgba(178, 115, 154, 0.12);
+        }
+        .admin-cal-day-h {
+            font-family: var(--font-body);
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-accent);
+            margin-bottom: 0.35rem;
+        }
+        .admin-cal-day-events {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            color: var(--text-main);
+        }
+        .admin-cal-day-events li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.35rem;
+            margin-bottom: 0.35rem;
+            word-break: break-word;
+        }
+        .admin-cal-day-events li:last-child { margin-bottom: 0; }
+        .admin-cal-empty-day { color: var(--text-muted); font-style: italic; font-size: 0.8rem; }
+        .cal-chip {
+            flex-shrink: 0;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 0.35rem;
+        }
+        .cal-chip.studio { background: #b2739a; }
+        .cal-chip.personal { background: #5c7cfa; }
+        .admin-native-cal-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-top: 0.65rem;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+        .admin-native-cal-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+        .admin-native-cal-err {
+            font-size: 0.8rem;
+            color: #8b3a52;
+            margin-top: 0.5rem;
+        }
+        .admin-cal-embed-secondary-label { margin-top: 1rem; }
+        @media (max-width: 899px) {
+            .admin-cal-frame-wrap,
+            #admin-cal-embed-hint { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -169,7 +283,23 @@
             <p class="admin-nav"><a href="admin-studio-hours.html">Edit studio hours</a> · <a href="index.html">Home</a></p>
             </div>
             <aside class="admin-book-cal-aside" aria-label="Google calendars">
-                <span class="cal-embed-label">Calendars</span>
+                <span class="cal-embed-label">This week</span>
+                <div class="admin-native-cal" id="admin-native-cal">
+                    <p class="cal-embed-hint" style="margin:0 0 0.65rem;">Shown on this page (no Google login in the browser). Enter your admin secret below, then refresh — or save “Remember” and reload.</p>
+                    <div class="admin-native-cal-toolbar">
+                        <button type="button" id="admin-cal-prev-week" aria-label="Previous week">‹</button>
+                        <span class="admin-cal-week-label" id="admin-cal-week-label">—</span>
+                        <button type="button" id="admin-cal-next-week" aria-label="Next week">›</button>
+                        <button type="button" class="admin-cal-refresh" id="admin-cal-refresh">Refresh</button>
+                    </div>
+                    <div class="admin-cal-week-by-day" id="admin-cal-week-by-day"></div>
+                    <div class="admin-native-cal-legend">
+                        <span><i class="cal-chip studio" aria-hidden="true"></i> Studio</span>
+                        <span><i class="cal-chip personal" aria-hidden="true"></i> Personal</span>
+                    </div>
+                    <p class="admin-native-cal-err" id="admin-cal-native-err" style="display:none;"></p>
+                </div>
+                <span class="cal-embed-label admin-cal-embed-secondary-label">Google calendar embed</span>
                 <div class="admin-cal-frame-wrap">
                     <div class="admin-cal-scale-inner">
                         <iframe id="admin-cal-embed" title="Studio and personal Google calendars"></iframe>
@@ -458,6 +588,165 @@
             }
             wireAdminServiceRecalc();
 
+            var stateWeekSundayYmd = null;
+            var adminCalLoading = false;
+            var adminCalLoadedOnce = false;
+
+            function pad2Admin(n) {
+                return (n < 10 ? '0' : '') + n;
+            }
+            function ymdFromDateAdmin(d) {
+                return d.getFullYear() + '-' + pad2Admin(d.getMonth() + 1) + '-' + pad2Admin(d.getDate());
+            }
+            function addDaysYmdAdmin(ymd, delta) {
+                var p = ymd.split('-').map(Number);
+                var dt = new Date(p[0], p[1] - 1, p[2] + delta);
+                return ymdFromDateAdmin(dt);
+            }
+
+            function showNativeCalErr(t) {
+                var el = document.getElementById('admin-cal-native-err');
+                if (!el) return;
+                if (t) {
+                    el.style.display = 'block';
+                    el.textContent = t;
+                } else {
+                    el.style.display = 'none';
+                    el.textContent = '';
+                }
+            }
+
+            function setAdminCalNavDisabled(dis) {
+                var prev = document.getElementById('admin-cal-prev-week');
+                var next = document.getElementById('admin-cal-next-week');
+                var ref = document.getElementById('admin-cal-refresh');
+                if (prev) prev.disabled = !!dis || !adminCalLoadedOnce;
+                if (next) next.disabled = !!dis || !adminCalLoadedOnce;
+                if (ref) ref.disabled = !!dis;
+            }
+
+            function renderAdminWeek(data) {
+                var tz = data.timeZone || 'America/Chicago';
+                var days = data.days || [];
+                var events = data.events || [];
+                var weekLabel = document.getElementById('admin-cal-week-label');
+                var grid = document.getElementById('admin-cal-week-by-day');
+                if (weekLabel && days.length) {
+                    var last = days[days.length - 1];
+                    weekLabel.textContent = days[0].label + ' — ' + last.label;
+                }
+                if (!grid) return;
+                grid.innerHTML = '';
+                var timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+                days.forEach(function (day) {
+                    var block = document.createElement('div');
+                    block.className = 'admin-cal-day-block';
+                    var h = document.createElement('div');
+                    h.className = 'admin-cal-day-h';
+                    h.textContent = day.label;
+                    var dayEv = events.filter(function (ev) {
+                        return ev.start < day.endMs && ev.end > day.startMs;
+                    });
+                    if (dayEv.length === 0) {
+                        var empty = document.createElement('p');
+                        empty.className = 'admin-cal-empty-day';
+                        empty.textContent = 'Nothing scheduled';
+                        block.appendChild(h);
+                        block.appendChild(empty);
+                    } else {
+                        var ul = document.createElement('ul');
+                        ul.className = 'admin-cal-day-events';
+                        dayEv.forEach(function (ev) {
+                            var li = document.createElement('li');
+                            var chip = document.createElement('i');
+                            chip.className = 'cal-chip ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
+                            chip.setAttribute('aria-hidden', 'true');
+                            var span = document.createElement('span');
+                            var timePart;
+                            if (ev.allDay) {
+                                timePart = 'All day';
+                            } else {
+                                timePart =
+                                    timeFmt.format(new Date(ev.start)) + ' – ' + timeFmt.format(new Date(ev.end));
+                            }
+                            span.textContent = timePart + ' · ' + ev.title;
+                            li.appendChild(chip);
+                            li.appendChild(span);
+                            ul.appendChild(li);
+                        });
+                        block.appendChild(h);
+                        block.appendChild(ul);
+                    }
+                    grid.appendChild(block);
+                });
+                if (days[0] && days[0].ymd) stateWeekSundayYmd = days[0].ymd;
+                adminCalLoadedOnce = true;
+                setAdminCalNavDisabled(false);
+            }
+
+            function loadAdminWeek() {
+                if (adminCalLoading) return;
+                var secret = secretInput.value.trim();
+                if (!secret) {
+                    showNativeCalErr('Enter your admin secret to load this calendar.');
+                    var grid = document.getElementById('admin-cal-week-by-day');
+                    if (grid) grid.innerHTML = '';
+                    var wl = document.getElementById('admin-cal-week-label');
+                    if (wl) wl.textContent = '—';
+                    adminCalLoadedOnce = false;
+                    setAdminCalNavDisabled(false);
+                    return;
+                }
+                adminCalLoading = true;
+                showNativeCalErr('');
+                setAdminCalNavDisabled(true);
+                var body = { ownerCalendarWeek: true, adminSecret: secret };
+                if (stateWeekSundayYmd) body.weekStart = stateWeekSundayYmd;
+
+                fetch(PROXY, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                })
+                    .then(function (r) {
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (!data || data.status !== 'success') {
+                            if (data && data.message === 'unauthorized') showNativeCalErr('Wrong admin secret.');
+                            else showNativeCalErr((data && data.message) || 'Could not load calendar.');
+                            return;
+                        }
+                        renderAdminWeek(data);
+                    })
+                    .catch(function () {
+                        showNativeCalErr('Network error.');
+                    })
+                    .finally(function () {
+                        adminCalLoading = false;
+                        setAdminCalNavDisabled(false);
+                    });
+            }
+
+            var prevWeekBtn = document.getElementById('admin-cal-prev-week');
+            var nextWeekBtn = document.getElementById('admin-cal-next-week');
+            var refreshCalBtn = document.getElementById('admin-cal-refresh');
+            if (prevWeekBtn) {
+                prevWeekBtn.addEventListener('click', function () {
+                    if (!stateWeekSundayYmd) return;
+                    stateWeekSundayYmd = addDaysYmdAdmin(stateWeekSundayYmd, -7);
+                    loadAdminWeek();
+                });
+            }
+            if (nextWeekBtn) {
+                nextWeekBtn.addEventListener('click', function () {
+                    if (!stateWeekSundayYmd) return;
+                    stateWeekSundayYmd = addDaysYmdAdmin(stateWeekSundayYmd, 7);
+                    loadAdminWeek();
+                });
+            }
+            if (refreshCalBtn) refreshCalBtn.addEventListener('click', function () { loadAdminWeek(); });
+
             try {
                 var saved = localStorage.getItem(STORAGE_KEY);
                 if (saved) {
@@ -465,6 +754,11 @@
                     rememberCb.checked = true;
                 }
             } catch (e) { /* ignore */ }
+
+            setAdminCalNavDisabled(false);
+            if (secretInput.value.trim()) {
+                setTimeout(loadAdminWeek, 100);
+            }
 
             rememberCb.addEventListener('change', function () {
                 try {
@@ -661,6 +955,7 @@
                     .then(function (data) {
                         if (data && data.status === 'success') {
                             setMsg(true, 'Booked. Client confirmation sent. You should get a copy at the studio inbox.');
+                            loadAdminWeek();
                             apptTime.value = '';
                             if (adminServiceRoot) {
                                 adminServiceRoot.querySelectorAll('input[name="admin-base-service"]').forEach(function (inp) {

@@ -1445,9 +1445,100 @@ function handleOwnerDirectBooking(d) {
   return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * Admin page: JSON week view (studio + personal) — no Google iframe; works on mobile WebKit.
+ * POST { ownerCalendarWeek: true, adminSecret, weekStart?: 'yyyy-MM-dd' (any day in week; snaps to Sunday) }
+ */
+function handleOwnerCalendarWeek(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unauthorized' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const tz = Session.getScriptTimeZone();
+  let weekStart;
+  const ws = d.weekStart ? String(d.weekStart).split('T')[0].trim() : '';
+  if (ws && /^\d{4}-\d{2}-\d{2}$/.test(ws)) {
+    const anchor = parseYmdAndTimeLocal_(ws, '12:00:00');
+    if (!isNaN(anchor.getTime())) {
+      const dow = anchor.getDay();
+      weekStart = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - dow, 0, 0, 0);
+    }
+  }
+  if (!weekStart || isNaN(weekStart.getTime())) {
+    const todayYmd = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    const anchor = parseYmdAndTimeLocal_(todayYmd, '12:00:00');
+    const dow = anchor.getDay();
+    weekStart = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - dow, 0, 0, 0);
+  }
+  const weekEndExclusive = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7, 0, 0, 0);
+  const events = collectCalendarWeekEvents_(weekStart, weekEndExclusive);
+  const days = buildWeekDaysPayload_(weekStart, tz);
+  return ContentService.createTextOutput(
+    JSON.stringify({
+      status: 'success',
+      timeZone: tz,
+      days: days,
+      events: events,
+    })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildWeekDaysPayload_(weekStart, tz) {
+  const days = [];
+  var cursor = new Date(weekStart.getTime());
+  for (var i = 0; i < 7; i++) {
+    const ymd = Utilities.formatDate(cursor, tz, 'yyyy-MM-dd');
+    const dayStart = parseYmdAndTimeLocal_(ymd, '00:00:00');
+    const next = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1, 0, 0, 0);
+    const label = Utilities.formatDate(cursor, tz, 'EEE, MMM d');
+    days.push({
+      ymd: ymd,
+      startMs: dayStart.getTime(),
+      endMs: next.getTime(),
+      label: label,
+    });
+    cursor = next;
+  }
+  return days;
+}
+
+function collectCalendarWeekEvents_(rangeStart, rangeEndExclusive) {
+  const out = [];
+  function addCal(calId, key) {
+    const id = String(calId == null ? '' : calId).trim();
+    if (!id) return;
+    try {
+      const cal = CalendarApp.getCalendarById(id);
+      if (!cal) return;
+      const evs = cal.getEvents(rangeStart, rangeEndExclusive);
+      for (var i = 0; i < evs.length; i++) {
+        const ev = evs[i];
+        out.push({
+          start: ev.getStartTime().getTime(),
+          end: ev.getEndTime().getTime(),
+          title: String(ev.getTitle() || '').trim() || '(No title)',
+          allDay: ev.isAllDayEvent(),
+          calendar: key,
+        });
+      }
+    } catch (err) {
+      Logger.log('collectCalendarWeekEvents_ ' + key + ' ' + err);
+    }
+  }
+  addCal(CALENDAR_ID, 'studio');
+  addCal(PERSONAL_CALENDAR_ID, 'personal');
+  out.sort(function (a, b) {
+    return a.start - b.start;
+  });
+  return out;
+}
+
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.ownerCalendarWeek === true) {
+      return handleOwnerCalendarWeek(d);
+    }
     if (d.adminSetWorkHours === true) {
       return handleAdminSetWorkHours(d);
     }
