@@ -24,6 +24,16 @@
             margin-bottom: 0.45rem;
         }
         .cal-embed-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0.5rem 0 0; line-height: 1.45; }
+        .cal-embed-hint strong { color: var(--text-main); font-weight: 600; }
+        .admin-cal-open-link {
+            display: inline-block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-accent);
+            text-decoration: none;
+            border-bottom: 1px solid currentColor;
+        }
+        .admin-cal-open-link:hover { opacity: 0.88; }
         /* Google embed has no font-size API; scale the iframe so event titles/times read smaller and more fits in view. Tweak 0.82–0.92 if needed. */
         .admin-cal-frame-wrap {
             --admin-cal-embed-scale: 0.86;
@@ -165,7 +175,13 @@
                         <iframe id="admin-cal-embed" title="Studio and personal Google calendars"></iframe>
                     </div>
                 </div>
-                <p class="cal-embed-hint">Sign in to Google in this browser if the calendar is blank.</p>
+                <p class="cal-embed-hint" id="admin-cal-embed-hint">
+                    Embedded calendars often stay blank on iPhone (even in Chrome) because the browser blocks Google’s login cookies inside this page.
+                    <strong>Open calendars in a new tab</strong> — same week view, but you’ll be signed in normally.
+                </p>
+                <p class="cal-embed-hint" style="margin-top:0.35rem;">
+                    <a class="admin-cal-open-link" id="admin-cal-open-tab" href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener noreferrer">Open studio + personal week view in Google Calendar</a>
+                </p>
             </aside>
             <div class="admin-book-form">
             <div id="msg" class="msg" role="status"></div>
@@ -345,9 +361,12 @@
                 ids.forEach(function (id) {
                     q.append('src', String(id).trim());
                 });
+                var embedUrl = 'https://calendar.google.com/calendar/embed?' + q.toString();
                 iframe.setAttribute('referrerpolicy', 'no-referrer-when-downgrade');
-                iframe.setAttribute('loading', 'lazy');
-                iframe.src = 'https://calendar.google.com/calendar/embed?' + q.toString();
+                /* loading="lazy" can delay or skip iframe on mobile; embed is above the fold anyway */
+                iframe.src = embedUrl;
+                var openTab = document.getElementById('admin-cal-open-tab');
+                if (openTab) openTab.href = embedUrl;
             })();
 
             var msg = document.getElementById('msg');
