@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Book client (admin) | Roni's Nail Studio</title>
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
         .admin-book-page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
         .admin-book-layout { display: flex; flex-direction: column; gap: 1.35rem; }
@@ -16,13 +16,13 @@
         .admin-book-cal-aside { width: 100%; max-width: 520px; margin: 0 auto; }
         .cal-embed-label {
             display: block;
-            font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
-            font-size: 11px;
-            font-weight: 500;
+            font-family: var(--font-body);
+            font-size: 0.72rem;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            color: #70757a;
-            margin-bottom: 8px;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 0.45rem;
         }
         @media (min-width: 960px) {
             .admin-book-layout {
@@ -112,75 +112,165 @@
             to { transform: rotate(360deg); }
         }
 
-        /* Admin calendar — Google Calendar–inspired (neutral, high legibility) */
+        /* Admin calendar — glass + lilac (site) + detail panel for full titles (Google-style) */
         .admin-native-cal {
-            --gcal-line: #dadce0;
-            --gcal-text: #3c4043;
-            --gcal-text-sec: #70757a;
-            --gcal-blue: #1a73e8;
-            --gcal-surface: #fff;
-            --gcal-surface-subtle: #f8f9fa;
-            --gcal-studio: #b2739a;
-            --gcal-personal: #1a73e8;
+            --cal-studio: #b2739a;
+            --cal-personal: #6c7cbc;
+            --cal-line: rgba(178, 115, 154, 0.2);
+            --cal-surface: rgba(255, 255, 255, 0.48);
+            --cal-surface-raised: rgba(255, 255, 255, 0.82);
+            --cal-weekend: rgba(250, 244, 252, 0.75);
             margin-bottom: 1rem;
-            padding: 12px 12px 14px;
-            border-radius: 8px;
-            border: 1px solid var(--gcal-line);
-            background: var(--gcal-surface);
-            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.06);
-            font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            padding: 1rem 1rem 1.15rem;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.72);
+            background: var(--cal-surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 14px 40px rgba(119, 78, 120, 0.09);
+            font-family: var(--font-body);
+            color: var(--text-main);
+        }
+        .admin-cal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+        .admin-cal-scroll-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            min-height: 0;
+        }
+        .admin-cal-detail-panel {
+            border-radius: 18px;
+            border: 1px solid var(--border-line);
+            background: rgba(255, 255, 255, 0.52);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 0.75rem 0.9rem 0.9rem;
+            min-height: 3.25rem;
+            box-shadow: 0 6px 20px rgba(119, 78, 120, 0.06);
+        }
+        .admin-cal-detail-placeholder {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.5;
+            text-align: center;
+            padding: 0.4rem 0.25rem;
+        }
+        .admin-cal-detail-head {
+            font-family: var(--font-heading);
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-accent);
+            margin-bottom: 0.65rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-line);
+        }
+        .admin-cal-detail-empty {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin: 0.25rem 0 0;
+        }
+        .admin-cal-detail-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .admin-cal-detail-card {
+            border-radius: 14px;
+            padding: 0.65rem 0.75rem 0.75rem;
+            border-left: 4px solid var(--cal-studio);
+            background: var(--cal-surface-raised);
+            box-shadow: 0 2px 10px rgba(119, 78, 120, 0.07);
+        }
+        .admin-cal-detail-card.personal {
+            border-left-color: var(--cal-personal);
+        }
+        .admin-cal-detail-card.is-highlight {
+            box-shadow: 0 0 0 2px var(--text-accent), 0 4px 16px rgba(119, 78, 120, 0.12);
+        }
+        .admin-cal-detail-card .admin-cal-detail-cal-tag {
+            display: block;
+            font-size: 0.62rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--cal-studio);
+            margin-bottom: 0.35rem;
+        }
+        .admin-cal-detail-card.personal .admin-cal-detail-cal-tag {
+            color: var(--cal-personal);
+        }
+        .admin-cal-detail-card .admin-cal-detail-when {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 0.35rem;
+        }
+        .admin-cal-detail-card .admin-cal-detail-title {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-main);
+            line-height: 1.4;
+            margin: 0;
         }
         .admin-cal-view-toggle {
             display: flex;
-            gap: 2px;
-            margin-bottom: 12px;
-            padding: 2px;
-            border-radius: 4px;
-            background: var(--gcal-surface-subtle);
-            border: none;
+            gap: 4px;
+            margin-bottom: 0.75rem;
+            padding: 3px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid var(--border-line);
         }
         .admin-cal-view-toggle button {
             flex: 1;
-            font-family: inherit;
-            font-size: 13px;
+            font-family: var(--font-body);
+            font-size: 0.8rem;
             font-weight: 500;
             text-transform: none;
-            letter-spacing: normal;
-            padding: 7px 10px;
+            letter-spacing: 0.02em;
+            padding: 0.45rem 0.5rem;
             border: none;
-            border-radius: 4px;
+            border-radius: 999px;
             background: transparent;
-            color: var(--gcal-text-sec);
+            color: var(--text-muted);
             cursor: pointer;
         }
         .admin-cal-view-toggle button:hover {
-            color: var(--gcal-text);
+            color: var(--text-main);
         }
         .admin-cal-view-toggle button.is-active {
-            background: var(--gcal-surface);
-            color: var(--gcal-blue);
-            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
+            background: rgba(255, 255, 255, 0.95);
+            color: var(--text-accent);
+            box-shadow: 0 2px 8px rgba(119, 78, 120, 0.12);
         }
         .admin-native-cal-toolbar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 6px 10px;
-            margin-bottom: 12px;
+            gap: 0.4rem 0.55rem;
+            margin-bottom: 0.75rem;
         }
         .admin-native-cal-toolbar button {
-            font-family: inherit;
-            border: 1px solid var(--gcal-line);
-            background: var(--gcal-surface);
-            color: var(--gcal-text-sec);
+            font-family: var(--font-body);
+            border: 1px solid var(--cal-line);
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--text-muted);
             cursor: pointer;
         }
         .admin-native-cal-toolbar button:hover:not(:disabled) {
-            background: var(--gcal-surface-subtle);
-            color: var(--gcal-text);
+            background: rgba(255, 255, 255, 0.95);
+            color: var(--text-accent);
+            border-color: rgba(178, 115, 154, 0.35);
         }
         .admin-native-cal-toolbar button:disabled {
-            opacity: 0.38;
+            opacity: 0.4;
             cursor: not-allowed;
         }
         #admin-cal-prev,
@@ -195,26 +285,29 @@
         .admin-cal-range-label {
             flex: 1;
             min-width: 0;
-            font-family: inherit;
-            font-size: clamp(1rem, 2.8vw, 1.25rem);
+            font-family: var(--font-heading);
+            font-size: clamp(0.95rem, 2.5vw, 1.15rem);
             font-weight: 400;
-            color: var(--gcal-text);
+            color: var(--text-main);
             text-align: center;
-            letter-spacing: -0.02em;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
         }
         .admin-cal-refresh {
             margin-left: auto;
             border-radius: 999px;
-            padding: 7px 16px;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--gcal-blue);
-            border-color: var(--gcal-line);
+            padding: 0.45rem 0.95rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-main);
+            border-color: var(--cal-line);
         }
         .admin-cal-refresh:hover:not(:disabled) {
-            background: rgba(26, 115, 232, 0.06);
-            border-color: rgba(26, 115, 232, 0.35);
-            color: var(--gcal-blue);
+            background: rgba(178, 115, 154, 0.12);
+            border-color: var(--text-accent);
+            color: var(--text-accent);
         }
         .admin-cal-week-wrap { max-height: min(58vh, 520px); overflow: hidden; display: flex; flex-direction: column; }
         .admin-cal-week-wrap[hidden] { display: none !important; }
@@ -226,15 +319,16 @@
             min-height: 0;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            border: 1px solid var(--gcal-line);
-            border-radius: 8px;
+            border: 1px solid var(--cal-line);
+            border-radius: 16px;
             overflow-x: hidden;
+            background: rgba(255, 255, 255, 0.35);
         }
         .admin-cal-month-wrap {
             max-height: min(62vh, 560px);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            border-radius: 8px;
+            border-radius: 16px;
         }
         .admin-cal-month-wrap[hidden] { display: none !important; }
         .admin-cal-month-grid {
@@ -242,40 +336,55 @@
             grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 1px;
             padding: 1px;
-            background: var(--gcal-line);
-            border-radius: 8px;
+            background: var(--cal-line);
+            border-radius: 16px;
             overflow: hidden;
         }
         .admin-cal-month-dow {
             font-weight: 500;
             text-align: center;
-            padding: 8px 4px;
-            color: var(--gcal-text-sec);
-            font-size: 11px;
-            background: var(--gcal-surface);
+            padding: 0.45rem 0.2rem;
+            color: var(--text-muted);
+            font-size: 0.65rem;
+            background: rgba(255, 255, 255, 0.85);
             text-transform: uppercase;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.08em;
         }
         .admin-cal-month-cell {
             min-height: 80px;
             padding: 4px 5px 5px;
-            background: var(--gcal-surface);
+            background: rgba(255, 255, 255, 0.88);
             overflow: hidden;
+            transition: background 0.15s ease, box-shadow 0.15s ease;
+        }
+        .admin-cal-month-cell:not(.is-pad) {
+            cursor: pointer;
+        }
+        .admin-cal-month-cell:not(.is-pad):hover {
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: inset 0 0 0 1px rgba(178, 115, 154, 0.22);
+        }
+        .admin-cal-month-cell:not(.is-pad):focus {
+            outline: none;
+            box-shadow: inset 0 0 0 2px var(--text-accent);
         }
         .admin-cal-month-cell.is-weekend {
-            background: var(--gcal-surface-subtle);
+            background: var(--cal-weekend);
+        }
+        .admin-cal-month-cell.is-weekend:hover {
+            background: rgba(255, 255, 255, 0.92);
         }
         .admin-cal-month-cell.is-pad {
             min-height: 8px;
             padding: 0;
-            background: var(--gcal-surface-subtle);
+            background: rgba(255, 255, 255, 0.25);
             pointer-events: none;
         }
         .admin-cal-month-cell .dom {
-            font-weight: 500;
-            font-size: 12px;
+            font-weight: 600;
+            font-size: 0.75rem;
             margin-bottom: 3px;
-            color: var(--gcal-text);
+            color: var(--text-main);
             line-height: 22px;
         }
         .admin-cal-month-cell.is-today .dom {
@@ -286,120 +395,134 @@
             height: 26px;
             padding: 0 4px;
             border-radius: 50%;
-            background: var(--gcal-blue);
+            background: var(--text-accent);
             color: #fff;
-            font-weight: 500;
+            font-weight: 600;
         }
         .admin-cal-month-cell .ev-line {
             display: block;
-            font-size: 10px;
+            font-size: 0.62rem;
             line-height: 1.25;
             margin-top: 3px;
-            padding: 2px 4px 2px 6px;
-            border-radius: 3px;
-            border-left: 3px solid var(--gcal-studio);
-            background: rgba(178, 115, 154, 0.1);
-            color: var(--gcal-text);
+            padding: 3px 5px 3px 7px;
+            border-radius: 6px;
+            border-left: 3px solid var(--cal-studio);
+            background: rgba(178, 115, 154, 0.12);
+            color: var(--text-main);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            cursor: pointer;
+        }
+        .admin-cal-month-cell .ev-line:focus {
+            outline: 2px solid var(--text-accent);
+            outline-offset: 1px;
         }
         .admin-cal-month-cell .ev-line.personal {
-            border-left-color: var(--gcal-personal);
-            background: rgba(26, 115, 232, 0.08);
+            border-left-color: var(--cal-personal);
+            background: rgba(108, 124, 188, 0.12);
         }
         .admin-cal-month-cell .ev-line .ev-time {
-            color: var(--gcal-text-sec);
-            font-weight: 400;
+            color: var(--text-muted);
+            font-weight: 500;
             margin-right: 3px;
         }
         @media (min-width: 960px) {
             .admin-cal-month-cell { min-height: 92px; }
-            .admin-cal-month-cell .ev-line { font-size: 11px; }
+            .admin-cal-month-cell .ev-line { font-size: 0.68rem; }
         }
         .admin-cal-day-block {
-            padding: 10px 12px 12px;
-            background: var(--gcal-surface);
-            border-bottom: 1px solid var(--gcal-line);
+            padding: 0.65rem 0.85rem 0.85rem;
+            background: transparent;
+            border-bottom: 1px solid var(--cal-line);
+            transition: background 0.15s ease;
         }
         .admin-cal-day-block:last-child {
             border-bottom: none;
         }
+        .admin-cal-day-block:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
         .admin-cal-day-h {
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 500;
+            font-family: var(--font-body);
+            font-size: 0.8rem;
+            font-weight: 600;
             text-transform: none;
-            letter-spacing: normal;
-            color: var(--gcal-text);
-            margin-bottom: 8px;
+            letter-spacing: 0.02em;
+            color: var(--text-main);
+            margin-bottom: 0.45rem;
         }
         .admin-cal-day-block.is-today .admin-cal-day-h {
-            color: var(--gcal-blue);
+            color: var(--text-accent);
         }
         .admin-cal-day-events {
             list-style: none;
             margin: 0;
             padding: 0;
-            font-size: 13px;
-            line-height: 1.4;
+            font-size: 0.84rem;
+            line-height: 1.45;
         }
         .admin-cal-day-events li.admin-cal-gcal-ev {
             display: block;
-            margin-bottom: 6px;
-            padding: 8px 10px 8px 12px;
-            border-radius: 0 4px 4px 0;
-            border-left: 4px solid var(--gcal-studio);
-            background: rgba(178, 115, 154, 0.08);
+            margin-bottom: 0.45rem;
+            padding: 0.5rem 0.65rem 0.55rem 0.75rem;
+            border-radius: 0 12px 12px 0;
+            border-left: 4px solid var(--cal-studio);
+            background: rgba(255, 255, 255, 0.65);
             word-break: break-word;
+            box-shadow: 0 1px 6px rgba(119, 78, 120, 0.06);
+            cursor: pointer;
+            transition: box-shadow 0.15s ease, transform 0.12s ease;
+        }
+        .admin-cal-day-events li.admin-cal-gcal-ev:hover {
+            box-shadow: 0 3px 12px rgba(119, 78, 120, 0.1);
         }
         .admin-cal-day-events li.admin-cal-gcal-ev:last-child { margin-bottom: 0; }
         .admin-cal-day-events li.admin-cal-gcal-ev.personal {
-            border-left-color: var(--gcal-personal);
-            background: rgba(26, 115, 232, 0.06);
+            border-left-color: var(--cal-personal);
         }
         .admin-cal-gcal-ev-time {
             display: block;
-            font-size: 12px;
-            color: var(--gcal-text-sec);
-            margin-bottom: 2px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.15rem;
         }
         .admin-cal-gcal-ev-title {
             display: block;
-            color: var(--gcal-text);
-            font-weight: 400;
+            color: var(--text-main);
+            font-weight: 500;
         }
         .admin-cal-empty-day {
-            color: var(--gcal-text-sec);
+            color: var(--text-muted);
             font-style: normal;
-            font-size: 13px;
+            font-size: 0.82rem;
             margin: 0;
         }
         .admin-native-cal-legend {
             display: flex;
             flex-wrap: wrap;
-            gap: 14px;
-            margin-top: 12px;
-            padding-top: 10px;
-            border-top: 1px solid var(--gcal-line);
-            font-size: 12px;
-            color: var(--gcal-text-sec);
+            gap: 0.85rem;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border-line);
+            font-size: 0.72rem;
+            color: var(--text-muted);
         }
-        .admin-native-cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .admin-native-cal-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
         .admin-native-cal-legend .cal-chip {
             width: 10px;
             height: 10px;
-            border-radius: 2px;
+            border-radius: 3px;
             flex-shrink: 0;
         }
-        .admin-native-cal-legend .cal-chip.studio { background: var(--gcal-studio); }
-        .admin-native-cal-legend .cal-chip.personal { background: var(--gcal-personal); }
+        .admin-native-cal-legend .cal-chip.studio { background: var(--cal-studio); }
+        .admin-native-cal-legend .cal-chip.personal { background: var(--cal-personal); }
         .admin-native-cal-err {
-            font-family: inherit;
-            font-size: 13px;
-            color: #d93025;
-            margin-top: 10px;
-            line-height: 1.4;
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            color: #a9445c;
+            margin-top: 0.65rem;
+            line-height: 1.45;
         }
     </style>
 </head>
@@ -431,11 +554,18 @@
                         <button type="button" id="admin-cal-next" aria-label="Next">›</button>
                         <button type="button" class="admin-cal-refresh" id="admin-cal-refresh">Refresh</button>
                     </div>
-                    <div id="admin-cal-week-wrap" class="admin-cal-week-wrap">
-                        <div class="admin-cal-week-by-day" id="admin-cal-week-by-day"></div>
-                    </div>
-                    <div id="admin-cal-month-wrap" class="admin-cal-month-wrap" hidden>
-                        <div class="admin-cal-month-grid" id="admin-cal-month-grid"></div>
+                    <div class="admin-cal-body">
+                        <div class="admin-cal-scroll-stack">
+                            <div id="admin-cal-week-wrap" class="admin-cal-week-wrap">
+                                <div class="admin-cal-week-by-day" id="admin-cal-week-by-day"></div>
+                            </div>
+                            <div id="admin-cal-month-wrap" class="admin-cal-month-wrap" hidden>
+                                <div class="admin-cal-month-grid" id="admin-cal-month-grid"></div>
+                            </div>
+                        </div>
+                        <aside class="admin-cal-detail-panel" id="admin-cal-detail-panel" aria-label="Selected day events">
+                            <div id="admin-cal-detail-inner"></div>
+                        </aside>
                     </div>
                     <div class="admin-native-cal-legend">
                         <span><i class="cal-chip studio" aria-hidden="true"></i> Studio</span>
@@ -693,6 +823,90 @@
             var stateMonthYm = null;
             var adminCalLoading = false;
             var adminCalLoadedOnce = false;
+            var adminCalDetailContext = { tz: 'America/Chicago', days: [], events: [], mode: 'week' };
+
+            function resetAdminCalDetailPanel() {
+                var inner = document.getElementById('admin-cal-detail-inner');
+                if (!inner) return;
+                inner.innerHTML =
+                    '<p class="admin-cal-detail-placeholder">Tap a day or an event — full titles appear here.</p>';
+            }
+
+            function renderAdminCalDetailPanel(ymd, highlightStartMs) {
+                var inner = document.getElementById('admin-cal-detail-inner');
+                if (!inner) return;
+                var meta = null;
+                var di = 0;
+                for (; di < adminCalDetailContext.days.length; di++) {
+                    if (adminCalDetailContext.days[di].ymd === ymd) {
+                        meta = adminCalDetailContext.days[di];
+                        break;
+                    }
+                }
+                if (!meta) {
+                    resetAdminCalDetailPanel();
+                    return;
+                }
+                var tz = adminCalDetailContext.tz;
+                var timeFmt = new Intl.DateTimeFormat('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: tz,
+                });
+                var evs = adminCalDetailContext.events.filter(function (ev) {
+                    return ev.start < meta.endMs && ev.end > meta.startMs;
+                });
+                evs.sort(function (a, b) {
+                    return a.start - b.start;
+                });
+                inner.innerHTML = '';
+                var head = document.createElement('div');
+                head.className = 'admin-cal-detail-head';
+                head.textContent = meta.label;
+                inner.appendChild(head);
+                if (!evs.length) {
+                    var p = document.createElement('p');
+                    p.className = 'admin-cal-detail-empty';
+                    p.textContent = 'No events scheduled this day.';
+                    inner.appendChild(p);
+                    return;
+                }
+                var cards = document.createElement('div');
+                cards.className = 'admin-cal-detail-cards';
+                evs.forEach(function (ev) {
+                    var card = document.createElement('article');
+                    card.className =
+                        'admin-cal-detail-card ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
+                    if (highlightStartMs != null && Number(ev.start) === Number(highlightStartMs)) {
+                        card.classList.add('is-highlight');
+                    }
+                    var tag = document.createElement('span');
+                    tag.className = 'admin-cal-detail-cal-tag';
+                    tag.textContent = ev.calendar === 'personal' ? 'Personal' : 'Studio';
+                    var when = document.createElement('span');
+                    when.className = 'admin-cal-detail-when';
+                    if (ev.allDay) {
+                        when.textContent = 'All day';
+                    } else {
+                        when.textContent =
+                            timeFmt.format(new Date(ev.start)) +
+                            ' – ' +
+                            timeFmt.format(new Date(ev.end));
+                    }
+                    var h3 = document.createElement('h3');
+                    h3.className = 'admin-cal-detail-title';
+                    h3.textContent = ev.title || '(No title)';
+                    card.appendChild(tag);
+                    card.appendChild(when);
+                    card.appendChild(h3);
+                    cards.appendChild(card);
+                });
+                inner.appendChild(cards);
+                requestAnimationFrame(function () {
+                    var hi = inner.querySelector('.admin-cal-detail-card.is-highlight');
+                    if (hi) hi.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                });
+            }
 
             function pad2Admin(n) {
                 return (n < 10 ? '0' : '') + n;
@@ -781,6 +995,8 @@
                 var tz = data.timeZone || 'America/Chicago';
                 var days = data.days || [];
                 var events = data.events || [];
+                adminCalDetailContext = { tz: tz, days: days, events: events, mode: 'week' };
+                resetAdminCalDetailPanel();
                 var rangeLabel = document.getElementById('admin-cal-range-label');
                 var grid = document.getElementById('admin-cal-week-by-day');
                 if (rangeLabel && days.length) {
@@ -795,6 +1011,9 @@
                     var block = document.createElement('div');
                     block.className = 'admin-cal-day-block';
                     if (day.ymd === todayY) block.classList.add('is-today');
+                    block.dataset.ymd = day.ymd;
+                    block.setAttribute('tabindex', '0');
+                    block.setAttribute('aria-label', 'Select ' + day.label + ' for event details');
                     var h = document.createElement('div');
                     h.className = 'admin-cal-day-h';
                     h.textContent = day.label;
@@ -815,6 +1034,9 @@
                             var li = document.createElement('li');
                             li.className =
                                 'admin-cal-gcal-ev ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
+                            li.setAttribute('role', 'button');
+                            li.setAttribute('tabindex', '0');
+                            li.setAttribute('aria-label', 'Details: ' + (ev.title || 'Event'));
                             var timeEl = document.createElement('span');
                             timeEl.className = 'admin-cal-gcal-ev-time';
                             var titleEl = document.createElement('span');
@@ -830,11 +1052,33 @@
                             titleEl.textContent = ev.title;
                             li.appendChild(timeEl);
                             li.appendChild(titleEl);
+                            li.addEventListener('click', function (e) {
+                                e.stopPropagation();
+                                renderAdminCalDetailPanel(day.ymd, ev.start);
+                            });
+                            li.addEventListener('keydown', function (e) {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    renderAdminCalDetailPanel(day.ymd, ev.start);
+                                }
+                            });
                             ul.appendChild(li);
                         });
                         block.appendChild(h);
                         block.appendChild(ul);
                     }
+                    block.addEventListener('click', function (e) {
+                        if (e.target.closest('.admin-cal-gcal-ev')) return;
+                        renderAdminCalDetailPanel(day.ymd, null);
+                    });
+                    block.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            if (e.target.closest('.admin-cal-gcal-ev')) return;
+                            e.preventDefault();
+                            renderAdminCalDetailPanel(day.ymd, null);
+                        }
+                    });
                     grid.appendChild(block);
                 });
                 if (days[0] && days[0].ymd) stateWeekSundayYmd = days[0].ymd;
@@ -847,6 +1091,8 @@
                 var leading = Math.max(0, parseInt(data.leadingBlankDays, 10) || 0);
                 var days = data.days || [];
                 var events = data.events || [];
+                adminCalDetailContext = { tz: tz, days: days, events: events, mode: 'month' };
+                resetAdminCalDetailPanel();
                 var mk = data.month || stateMonthYm;
                 if (data.month) stateMonthYm = data.month;
                 var rangeLabel = document.getElementById('admin-cal-range-label');
@@ -875,6 +1121,9 @@
                     var col = (leading + dayIdx) % 7;
                     if (col === 0 || col === 6) cell.classList.add('is-weekend');
                     if (day.ymd === todayY) cell.classList.add('is-today');
+                    cell.dataset.ymd = day.ymd;
+                    cell.setAttribute('tabindex', '0');
+                    cell.setAttribute('aria-label', 'Select ' + day.label);
                     var domEl = document.createElement('div');
                     domEl.className = 'dom';
                     domEl.textContent = String(day.dayOfMonth != null ? day.dayOfMonth : '');
@@ -887,12 +1136,37 @@
                         var line = document.createElement('div');
                         line.className =
                             'ev-line' + (ev.calendar === 'personal' ? ' personal' : '');
+                        line.setAttribute('role', 'button');
+                        line.setAttribute('tabindex', '0');
+                        line.setAttribute('aria-label', 'Details: ' + (ev.title || 'Event'));
                         var timeSpan = document.createElement('span');
                         timeSpan.className = 'ev-time';
                         timeSpan.textContent = ev.allDay ? 'All day' : timeFmt.format(new Date(ev.start));
                         line.appendChild(timeSpan);
                         line.appendChild(document.createTextNode(' ' + (ev.title || '')));
+                        line.addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            renderAdminCalDetailPanel(day.ymd, ev.start);
+                        });
+                        line.addEventListener('keydown', function (e) {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                renderAdminCalDetailPanel(day.ymd, ev.start);
+                            }
+                        });
                         cell.appendChild(line);
+                    });
+                    cell.addEventListener('click', function (e) {
+                        if (e.target.closest('.ev-line')) return;
+                        renderAdminCalDetailPanel(day.ymd, null);
+                    });
+                    cell.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            if (e.target.closest('.ev-line')) return;
+                            e.preventDefault();
+                            renderAdminCalDetailPanel(day.ymd, null);
+                        }
                     });
                     grid.appendChild(cell);
                 });
@@ -912,6 +1186,8 @@
                     var rl = document.getElementById('admin-cal-range-label');
                     if (rl) rl.textContent = '—';
                     adminCalLoadedOnce = false;
+                    adminCalDetailContext = { tz: 'America/Chicago', days: [], events: [], mode: 'week' };
+                    resetAdminCalDetailPanel();
                     setAdminCalNavDisabled(false);
                     return;
                 }
@@ -937,6 +1213,7 @@
                         if (!data || data.status !== 'success') {
                             if (data && data.message === 'unauthorized') showNativeCalErr('Wrong admin secret.');
                             else showNativeCalErr((data && data.message) || 'Could not load calendar.');
+                            resetAdminCalDetailPanel();
                             return;
                         }
                         var v = String(data.calView || '').toLowerCase();
@@ -962,6 +1239,7 @@
                     })
                     .catch(function () {
                         showNativeCalErr('Network error.');
+                        resetAdminCalDetailPanel();
                     })
                     .finally(function () {
                         adminCalLoading = false;
@@ -1022,6 +1300,7 @@
             } catch (e) { /* ignore */ }
 
             setCalViewUi('week');
+            resetAdminCalDetailPanel();
             setAdminCalNavDisabled(false);
             if (secretInput.value.trim()) {
                 setTimeout(loadAdminCal, 100);
