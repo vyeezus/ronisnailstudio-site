@@ -123,7 +123,7 @@ function baseServiceLabelForCalendar_(serviceBlob) {
 function calendarLocationFromTimeAndService_(timeDisplay, serviceBlob) {
   const time = String(timeDisplay == null ? '' : timeDisplay).trim();
   const base = baseServiceLabelForCalendar_(serviceBlob);
-  if (time && base) return time + ' · ' + base;
+  if (time && base) return time + ' ' + base;
   if (time) return time;
   return base;
 }
