@@ -14,6 +14,19 @@ function bootBookingPage() {
     const SCRIPT_DIRECT =
         'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
 
+    /** Google Apps Script cold starts + mobile networks often exceed 8s; keep under ~30s browser limits. */
+    const JSONP_TIMEOUT_MS = 26000;
+
+    function safeDecodeURIComponent(str) {
+        if (str == null || str === '') return '';
+        const s = String(str);
+        try {
+            return decodeURIComponent(s.replace(/\+/g, ' '));
+        } catch (e) {
+            return s;
+        }
+    }
+
     const DEFAULT_WORK_HOURS = {
         1: { start: 11, end: 18 },
         2: { start: 11, end: 18 },
@@ -50,7 +63,7 @@ function bootBookingPage() {
             const timeoutId = setTimeout(() => {
                 cleanup();
                 reject(new Error('work hours jsonp timeout'));
-            }, 8000);
+            }, JSONP_TIMEOUT_MS);
 
             function cleanup() {
                 clearTimeout(timeoutId);
@@ -82,13 +95,25 @@ function bootBookingPage() {
         });
     }
 
+    async function loadJsonpTwice_(loader) {
+        let lastErr;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                return await loader();
+            } catch (e) {
+                lastErr = e;
+            }
+        }
+        throw lastErr;
+    }
+
     async function loadWorkHours() {
         try {
-            await loadWorkHoursJsonp(SCRIPT_PROXY);
+            await loadJsonpTwice_(() => loadWorkHoursJsonp(SCRIPT_PROXY));
         } catch (e) {
             console.warn('Proxy /api/booking failed; loading work hours from Google directly.', e);
             try {
-                await loadWorkHoursJsonp(SCRIPT_DIRECT);
+                await loadJsonpTwice_(() => loadWorkHoursJsonp(SCRIPT_DIRECT));
             } catch (e2) {
                 console.error('Work hours JSONP failed entirely.', e2);
             }
@@ -181,7 +206,7 @@ function bootBookingPage() {
             const timeoutId = setTimeout(() => {
                 cleanup();
                 reject(new Error('jsonp timeout'));
-            }, 8000);
+            }, JSONP_TIMEOUT_MS);
 
             function cleanup() {
                 clearTimeout(timeoutId);
@@ -219,7 +244,7 @@ function bootBookingPage() {
             const timeoutId = setTimeout(() => {
                 cleanup();
                 reject(new Error('reschedule meta timeout'));
-            }, 8000);
+            }, JSONP_TIMEOUT_MS);
 
             function cleanup() {
                 clearTimeout(timeoutId);
@@ -254,11 +279,11 @@ function bootBookingPage() {
 
     async function fetchBusyTimes(ignoreEventId) {
         try {
-            await loadCalendarJsonp(SCRIPT_PROXY, ignoreEventId);
+            await loadJsonpTwice_(() => loadCalendarJsonp(SCRIPT_PROXY, ignoreEventId));
         } catch (e) {
             console.warn('Proxy /api/booking failed; loading calendar from Google directly.', e);
             try {
-                await loadCalendarJsonp(SCRIPT_DIRECT, ignoreEventId);
+                await loadJsonpTwice_(() => loadCalendarJsonp(SCRIPT_DIRECT, ignoreEventId));
             } catch (e2) {
                 console.error('Calendar JSONP failed entirely.', e2);
                 busyTimes = [];
@@ -621,7 +646,7 @@ function bootBookingPage() {
             if (!t) return;
             const tag = document.createElement('span');
             tag.className = 'service-tag';
-            tag.textContent = decodeURIComponent(t);
+            tag.textContent = safeDecodeURIComponent(t);
             tagsContainer.appendChild(tag);
         });
     }
@@ -642,10 +667,10 @@ function bootBookingPage() {
             }
             let meta;
             try {
-                meta = await loadRescheduleMetaJsonp(SCRIPT_PROXY, rescheduleEventId, rescheduleToken);
+                meta = await loadJsonpTwice_(() => loadRescheduleMetaJsonp(SCRIPT_PROXY, rescheduleEventId, rescheduleToken));
             } catch (e1) {
                 try {
-                    meta = await loadRescheduleMetaJsonp(SCRIPT_DIRECT, rescheduleEventId, rescheduleToken);
+                    meta = await loadJsonpTwice_(() => loadRescheduleMetaJsonp(SCRIPT_DIRECT, rescheduleEventId, rescheduleToken));
                 } catch (e2) {
                     meta = null;
                 }
@@ -678,27 +703,32 @@ function bootBookingPage() {
             return;
         }
 
-        populateServiceTags(serviceNames);
-
-        monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
-
         const loadingEl = document.getElementById('calendar-loading');
 
-        if (priceStr && timeStr && !isReschedule) {
-            const summaryInfo = document.createElement('div');
-            summaryInfo.className = 'summary-info-lite';
-            summaryInfo.innerHTML = `
-            <p>Estimated Total: <strong>${decodeURIComponent(priceStr)}</strong></p>
-            <p>Estimated Time: <strong>${decodeURIComponent(timeStr)}</strong></p>
-        `;
-            tagsContainer.after(summaryInfo);
-        }
-
         try {
+            populateServiceTags(serviceNames);
+            monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
+
+            if (priceStr && timeStr && !isReschedule) {
+                const summaryInfo = document.createElement('div');
+                summaryInfo.className = 'summary-info-lite';
+                const p = safeDecodeURIComponent(priceStr);
+                const t = safeDecodeURIComponent(timeStr);
+                summaryInfo.innerHTML = `
+            <p>Estimated Total: <strong>${p.replace(/</g, '&lt;')}</strong></p>
+            <p>Estimated Time: <strong>${t.replace(/</g, '&lt;')}</strong></p>
+        `;
+                tagsContainer.after(summaryInfo);
+            }
+
             await Promise.all([loadWorkHours(), fetchBusyTimes(ignoreEventId)]);
         } finally {
             renderCalendar();
-            if (loadingEl) loadingEl.hidden = true;
+            if (loadingEl) {
+                loadingEl.hidden = true;
+                loadingEl.style.display = 'none';
+                loadingEl.setAttribute('aria-hidden', 'true');
+            }
         }
     }
 

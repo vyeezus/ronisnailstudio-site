@@ -5,7 +5,8 @@
 const APPS_SCRIPT_EXEC_URL =
   'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
 
-const FETCH_TIMEOUT_MS = 8000;
+/** Calendar/work-hours JSONP must survive GAS cold start + mobile latency (was 8s and timed out on phones). */
+const FETCH_TIMEOUT_MS = 28000;
 /** POST (bookings, owner alternate-time) can exceed 8s while MailApp + Sheets run on Google. */
 const POST_FETCH_TIMEOUT_MS = 45000;
 
