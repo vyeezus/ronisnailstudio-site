@@ -79,6 +79,61 @@ function formatSheetTimeForEmail(value) {
   return String(value).trim();
 }
 
+/**
+ * Service text is comma-separated (public booking) or middle-dot-separated (admin page).
+ * Calendar "location" shows start time + base service only (no design tier, no foreign soak-off add-on).
+ */
+function splitServiceSegments_(serviceBlob) {
+  const s = String(serviceBlob == null ? '' : serviceBlob).trim();
+  if (!s) return [];
+  return s
+    .split(/\s*[,，]\s*|\s*·\s*/)
+    .map(function (p) {
+      return String(p).trim();
+    })
+    .filter(function (p) {
+      return p.length > 0;
+    });
+}
+
+function isDesignTierOrSoakoffSegment_(segment) {
+  const t = String(segment || '').trim();
+  if (!t) return true;
+  const low = t.toLowerCase();
+  if (low.indexOf('foreign soak-off') >= 0) return true;
+  if (/^tier\s*\d+/i.test(t)) return true;
+  return false;
+}
+
+/** Labels like "Structured Gel New Set" / "Gel X Medium" — excludes Tier N and foreign soak-off. */
+function baseServiceLabelForCalendar_(serviceBlob) {
+  const segments = splitServiceSegments_(serviceBlob);
+  const bases = segments.filter(function (p) {
+    return !isDesignTierOrSoakoffSegment_(p);
+  });
+  if (bases.length > 0) {
+    return bases.join(' + ');
+  }
+  if (segments.length > 0) {
+    return segments.join(' + ');
+  }
+  return '';
+}
+
+function calendarLocationFromTimeAndService_(timeDisplay, serviceBlob) {
+  const time = String(timeDisplay == null ? '' : timeDisplay).trim();
+  const base = baseServiceLabelForCalendar_(serviceBlob);
+  if (time && base) return time + ' · ' + base;
+  if (time) return time;
+  return base;
+}
+
+function applyBookingLocationToEvent_(ev, timeDisplay, serviceBlob) {
+  if (!ev || typeof ev.setLocation !== 'function') return;
+  const loc = calendarLocationFromTimeAndService_(timeDisplay, serviceBlob);
+  if (loc) ev.setLocation(loc);
+}
+
 function emailDetailRow(label, value) {
   const v = escapeHtml(value || '—');
   const l = escapeHtml(label);
@@ -375,6 +430,7 @@ function syncCalendarToSpreadsheetBody_() {
           const neatDate = Utilities.formatDate(calStart, tz, 'EEEE, MMMM d, yyyy');
           const clientEmail = data[i][6];
           const service = data[i][3];
+          applyBookingLocationToEvent_(event, calTimeDisplay, service);
           if (clientEmail) {
             const html = getCalendarUpdatedClientEmailHtml(data[i][1], neatDate, calTimeDisplay, service);
             MailApp.sendEmail({
@@ -733,10 +789,15 @@ function doGet(e) {
         }
         const cal = CalendarApp.getCalendarById(CALENDAR_ID);
         const ev = cal.getEventById(eventId);
-        if (ev) { 
-          const nEv = cal.createEvent(clientName, ev.getStartTime(), ev.getEndTime(), { description: ev.getDescription() }); 
-          ev.deleteEvent(); 
-          sheet.getRange(rowIndex, 9).setValue(nEv.getId()); 
+        if (ev) {
+          const nEv = cal.createEvent(clientName, ev.getStartTime(), ev.getEndTime(), { description: ev.getDescription() });
+          applyBookingLocationToEvent_(
+            nEv,
+            Utilities.formatDate(nEv.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
+            service
+          );
+          ev.deleteEvent();
+          sheet.getRange(rowIndex, 9).setValue(nEv.getId());
         }
         sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
         
@@ -864,6 +925,7 @@ function doGet(e) {
     sheet.getRange(rowIndex, 5).setValue(start);
     const neatTimeDisplay = Utilities.formatDate(start, tz, 'h:mm a');
     sheet.getRange(rowIndex, 6).setValue(neatTimeDisplay);
+    applyBookingLocationToEvent_(nEv, neatTimeDisplay, service);
     sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
     sheet.getRange(rowIndex, 12).setValue('');
     sheet.getRange(rowIndex, 13).setValue('');
@@ -932,6 +994,11 @@ function doGet(e) {
       const evConfirm = calConfirm.getEventById(eventId);
       if (evConfirm) {
         evConfirm.setTitle(clientConfirmedCalendarEventTitle_(clientName));
+        applyBookingLocationToEvent_(
+          evConfirm,
+          Utilities.formatDate(evConfirm.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
+          service
+        );
       }
       SpreadsheetApp.flush();
       const neatD = formatSheetDateForEmail(dateVal);
@@ -1191,8 +1258,9 @@ function handleReschedulePost(d) {
   const newEnd = new Date(start.getTime() + durMin * 60000);
   ev.setTime(start, newEnd);
   ev.setTitle(clientName);
-  sheet.getRange(rowIndex, 5).setValue(start);
   const neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
+  applyBookingLocationToEvent_(ev, neatTimeStr, service);
+  sheet.getRange(rowIndex, 5).setValue(start);
   sheet.getRange(rowIndex, 6).setValue(neatTimeStr);
   sheet.getRange(rowIndex, 11).setValue('');
   SpreadsheetApp.flush();
@@ -1314,11 +1382,12 @@ function handleOwnerDirectBooking(d) {
     durMin +
     '\nBooked by: owner (admin page)';
   const ev = c.createEvent(clientName, start, end, { description: desc });
+  const tz = Session.getScriptTimeZone();
+  const neatTime = Utilities.formatDate(start, tz, 'h:mm a');
+  applyBookingLocationToEvent_(ev, neatTime, service);
   s.getRange(row, 9).setValue(ev.getId());
   SpreadsheetApp.flush();
-  const tz = Session.getScriptTimeZone();
   const neatD = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
-  const neatTime = Utilities.formatDate(start, tz, 'h:mm a');
   const acceptEmailHtml = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
   MailApp.sendEmail({
     to: email,
@@ -1399,10 +1468,12 @@ function doPost(e) {
       '\nDurationMinutes: ' +
       durMin;
     const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
-    ev.setColor(PENDING_COLOR); s.getRange(row, 9).setValue(ev.getId());
+    ev.setColor(PENDING_COLOR);
     const tz = Session.getScriptTimeZone();
-    const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
     const neatTimeEmail = Utilities.formatDate(start, tz, 'h:mm a');
+    applyBookingLocationToEvent_(ev, neatTimeEmail, d.service);
+    s.getRange(row, 9).setValue(ev.getId());
+    const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
     const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken);
     MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
     
