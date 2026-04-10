@@ -2,18 +2,36 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <link rel="icon" href="favicon.png" type="image/png">
     <meta name="robots" content="noindex, nofollow">
     <title>Book client (admin) | Roni's Nail Studio</title>
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        .admin-book-page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
-        .admin-book-layout { display: flex; flex-direction: column; gap: 1.35rem; }
-        .admin-book-heading { max-width: 520px; width: 100%; margin: 0 auto; }
-        .admin-book-form { max-width: 520px; width: 100%; margin: 0 auto; }
-        .admin-book-cal-aside { width: 100%; max-width: 520px; margin: 0 auto; }
+        .admin-book-page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        main.container > .form-section.admin-book-page {
+            min-width: 0;
+            max-width: 100%;
+            flex: 1 1 auto;
+            box-sizing: border-box;
+        }
+        .admin-book-layout { display: flex; flex-direction: column; gap: 1.35rem; min-width: 0; }
+        .admin-book-heading { max-width: 520px; width: 100%; margin: 0 auto; min-width: 0; }
+        .admin-book-form { max-width: 520px; width: 100%; margin: 0 auto; min-width: 0; }
+        .admin-book-cal-aside {
+            width: 100%;
+            max-width: min(520px, 100%);
+            margin: 0 auto;
+            min-width: 0;
+        }
         .cal-embed-label {
             display: block;
             font-family: var(--font-body);
@@ -130,17 +148,22 @@
             box-shadow: 0 14px 40px rgba(119, 78, 120, 0.09);
             font-family: var(--font-body);
             color: var(--text-main);
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         .admin-cal-body {
             display: flex;
             flex-direction: column;
             gap: 0.85rem;
+            min-width: 0;
         }
         .admin-cal-scroll-stack {
             display: flex;
             flex-direction: column;
             gap: 0;
             min-height: 0;
+            min-width: 0;
         }
         .admin-cal-detail-panel {
             border-radius: 18px;
@@ -317,11 +340,15 @@
             border: 1px solid var(--cal-line);
             border-radius: 16px;
             background: rgba(255, 255, 255, 0.35);
+            min-width: 0;
+            max-width: 100%;
         }
         .admin-cal-week-wrap[hidden] { display: none !important; }
         .admin-cal-week-by-day {
             flex: 1;
             min-height: 0;
+            min-width: 0;
+            max-width: 100%;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
         }
@@ -331,11 +358,18 @@
             overflow: hidden;
             margin: 2px;
             box-shadow: 0 1px 2px rgba(60, 64, 67, 0.1);
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         .admin-cal-wk-tl-scroll {
             max-height: min(68vh, 600px);
-            overflow: auto;
+            overflow-x: auto;
+            overflow-y: auto;
             -webkit-overflow-scrolling: touch;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         /* Wider than viewport on phones so day columns stay readable; swipe horizontally */
         .admin-cal-wk-tl-sheet {
