@@ -335,6 +335,12 @@
         .admin-cal-wk-tl-scroll {
             max-height: min(68vh, 600px);
             overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        /* Wider than viewport on phones so day columns stay readable; swipe horizontally */
+        .admin-cal-wk-tl-sheet {
+            min-width: 100%;
+            box-sizing: border-box;
         }
         .admin-cal-wk-tl-header-row {
             display: grid;
@@ -501,6 +507,59 @@
             color: var(--text-muted);
             margin: 0.5rem 0.35rem 0.25rem;
             line-height: 1.4;
+        }
+        .admin-cal-wk-tl-ev.is-short .ev-t {
+            display: none;
+        }
+        .admin-cal-wk-tl-ev.is-tall .ev-n {
+            white-space: normal;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 4;
+            line-clamp: 4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        @media (max-width: 720px) {
+            .admin-cal-wk-tl-sheet {
+                min-width: calc(46px + 7 * 92px + 8px);
+            }
+            .admin-cal-wk-tl-header-row {
+                grid-template-columns: 46px repeat(7, minmax(92px, 1fr));
+            }
+            .admin-cal-wk-tl-corner {
+                position: sticky;
+                left: 0;
+                z-index: 5;
+                box-shadow: 3px 0 8px rgba(60, 64, 67, 0.08);
+            }
+            .admin-cal-wk-tl-body {
+                grid-template-columns: 46px minmax(calc(7 * 92px + 6px), 1fr);
+            }
+            .admin-cal-wk-tl-time-gutter {
+                position: sticky;
+                left: 0;
+                z-index: 4;
+                box-shadow: 3px 0 8px rgba(60, 64, 67, 0.06);
+            }
+            .admin-cal-wk-tl-cols {
+                grid-template-columns: repeat(7, minmax(92px, 1fr));
+            }
+            .admin-cal-wk-tl-col {
+                min-width: 92px;
+            }
+            .admin-cal-wk-tl-ev {
+                font-size: 11px;
+                line-height: 1.25;
+                padding: 3px 5px;
+            }
+            .admin-cal-wk-tl-ev .ev-t {
+                font-size: 9px;
+                white-space: nowrap;
+            }
+            .admin-cal-wk-tl-foot {
+                font-size: 11px;
+            }
         }
         .admin-cal-month-wrap {
             max-height: min(62vh, 560px);
@@ -1153,6 +1212,20 @@
                 return { top: top, height: Math.max(4, h) };
             }
 
+            function adminWeekCompactRange(ev, tz) {
+                var fs = new Intl.DateTimeFormat('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: tz,
+                }).format(new Date(ev.start));
+                var fe = new Intl.DateTimeFormat('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: tz,
+                }).format(new Date(ev.end));
+                return fs.replace(/\s/g, '').toLowerCase() + '–' + fe.replace(/\s/g, '').toLowerCase();
+            }
+
             function renderAdminWeek(data) {
                 var tz = data.timeZone || 'America/Chicago';
                 var days = data.days || [];
@@ -1187,6 +1260,13 @@
                 var scroll = document.createElement('div');
                 scroll.className = 'admin-cal-wk-tl-scroll';
 
+                var useMobileWeek =
+                    typeof window.matchMedia === 'function' &&
+                    window.matchMedia('(max-width: 720px)').matches;
+
+                var sheet = document.createElement('div');
+                sheet.className = 'admin-cal-wk-tl-sheet';
+
                 var headerRow = document.createElement('div');
                 headerRow.className = 'admin-cal-wk-tl-header-row';
                 var corner = document.createElement('div');
@@ -1212,7 +1292,7 @@
                     hcell.appendChild(domSpan);
                     headerRow.appendChild(hcell);
                 });
-                scroll.appendChild(headerRow);
+                sheet.appendChild(headerRow);
 
                 var body = document.createElement('div');
                 body.className = 'admin-cal-wk-tl-body';
@@ -1286,12 +1366,16 @@
                         blk.style.top = lay.top + 'px';
                         blk.style.height = lay.height + 'px';
                         blk.title = ev.title || '';
+                        if (lay.height < 42) blk.classList.add('is-short');
+                        if (lay.height >= 54) blk.classList.add('is-tall');
                         var tEl = document.createElement('span');
                         tEl.className = 'ev-t';
                         var nEl = document.createElement('span');
                         nEl.className = 'ev-n';
                         if (ev.allDay) {
                             tEl.textContent = 'All day';
+                        } else if (useMobileWeek) {
+                            tEl.textContent = adminWeekCompactRange(ev, tz);
                         } else {
                             tEl.textContent =
                                 timeFmt.format(new Date(ev.start)) +
@@ -1340,14 +1424,16 @@
                 }
 
                 body.appendChild(colsWrap);
-                scroll.appendChild(body);
+                sheet.appendChild(body);
+                scroll.appendChild(sheet);
                 wrap.appendChild(scroll);
                 grid.appendChild(wrap);
 
                 var foot = document.createElement('p');
                 foot.className = 'admin-cal-wk-tl-foot';
-                foot.textContent =
-                    'Vertical gaps are free time. Tap a block for full title and details below; tap empty space in a day for that day’s list.';
+                foot.textContent = useMobileWeek
+                    ? 'Swipe sideways to see all days. Vertical gaps are free time. Tap a block for full details below, or empty space for that day’s list.'
+                    : 'Vertical gaps are free time. Tap a block for full title and details below; tap empty space in a day for that day’s list.';
                 grid.appendChild(foot);
 
                 if (days[0] && days[0].ymd) stateWeekSundayYmd = days[0].ymd;
