@@ -309,20 +309,198 @@
             border-color: var(--text-accent);
             color: var(--text-accent);
         }
-        .admin-cal-week-wrap { max-height: min(58vh, 520px); overflow: hidden; display: flex; flex-direction: column; }
-        .admin-cal-week-wrap[hidden] { display: none !important; }
-        .admin-cal-week-by-day {
+        .admin-cal-week-wrap {
+            max-height: min(72vh, 640px);
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            gap: 0;
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
             border: 1px solid var(--cal-line);
             border-radius: 16px;
-            overflow-x: hidden;
             background: rgba(255, 255, 255, 0.35);
+        }
+        .admin-cal-week-wrap[hidden] { display: none !important; }
+        .admin-cal-week-by-day {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        /* Admin week — Google Calendar–style time grid (gaps vs events) */
+        .admin-cal-wk-tl-wrap {
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 2px;
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.1);
+        }
+        .admin-cal-wk-tl-scroll {
+            max-height: min(68vh, 600px);
+            overflow: auto;
+        }
+        .admin-cal-wk-tl-header-row {
+            display: grid;
+            grid-template-columns: 46px repeat(7, minmax(0, 1fr));
+            gap: 1px;
+            background: var(--cal-line);
+            border: 1px solid var(--cal-line);
+            border-bottom: none;
+            border-radius: 12px 12px 0 0;
+        }
+        .admin-cal-wk-tl-corner {
+            background: rgba(255, 255, 255, 0.95);
+            min-height: 48px;
+        }
+        .admin-cal-wk-tl-head-cell {
+            background: rgba(255, 255, 255, 0.95);
+            text-align: center;
+            padding: 6px 2px;
+            min-width: 0;
+        }
+        .admin-cal-wk-tl-head-cell.is-weekend {
+            background: var(--cal-weekend);
+        }
+        .admin-cal-wk-tl-head-cell.is-today-head .admin-cal-wk-tl-head-dom {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            margin: 2px auto 0;
+            border-radius: 50%;
+            background: var(--text-accent);
+            color: #fff;
+            font-weight: 600;
+        }
+        .admin-cal-wk-tl-head-dow {
+            display: block;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .admin-cal-wk-tl-head-dom {
+            display: block;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-main);
+            margin-top: 2px;
+        }
+        .admin-cal-wk-tl-body {
+            display: grid;
+            grid-template-columns: 46px minmax(0, 1fr);
+            gap: 1px;
+            background: var(--cal-line);
+            border: 1px solid var(--cal-line);
+            border-radius: 0 0 12px 12px;
+        }
+        .admin-cal-wk-tl-time-gutter {
+            position: relative;
+            background: rgba(255, 255, 255, 0.95);
+        }
+        .admin-cal-wk-tl-time-label {
+            position: absolute;
+            left: 0;
+            right: 4px;
+            text-align: right;
+            font-size: 10px;
+            color: var(--text-muted);
+            line-height: 1;
+            transform: translateY(-5px);
+        }
+        .admin-cal-wk-tl-cols {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 1px;
+            background: var(--cal-line);
+            position: relative;
+        }
+        .admin-cal-wk-tl-col {
+            background: rgba(255, 255, 255, 0.92);
+            min-width: 0;
+            position: relative;
+        }
+        .admin-cal-wk-tl-col-inner {
+            position: relative;
+            width: 100%;
+        }
+        .admin-cal-wk-tl-grid {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            pointer-events: none;
+        }
+        .admin-cal-wk-tl-hour-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: #f1f3f4;
+        }
+        .admin-cal-wk-tl-layer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            pointer-events: none;
+        }
+        .admin-cal-wk-tl-ev {
+            position: absolute;
+            left: 3px;
+            right: 3px;
+            border-radius: 4px;
+            box-sizing: border-box;
+            pointer-events: auto;
+            cursor: pointer;
+            overflow: hidden;
+            text-align: left;
+            padding: 2px 4px;
+            font-size: 10px;
+            line-height: 1.2;
+            border-left: 3px solid var(--cal-studio);
+            background: rgba(178, 115, 154, 0.2);
+            color: var(--text-main);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+        }
+        .admin-cal-wk-tl-ev.personal {
+            border-left-color: var(--cal-personal);
+            background: rgba(108, 124, 188, 0.22);
+        }
+        .admin-cal-wk-tl-ev .ev-t {
+            display: block;
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+        .admin-cal-wk-tl-ev .ev-n {
+            display: block;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .admin-cal-wk-tl-now {
+            position: absolute;
+            height: 2px;
+            background: #ea4335;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+            z-index: 5;
+            pointer-events: none;
+        }
+        .admin-cal-wk-tl-col-hit {
+            position: absolute;
+            inset: 0;
+            border: none;
+            padding: 0;
+            margin: 0;
+            background: transparent;
+            cursor: pointer;
+            z-index: 0;
+        }
+        .admin-cal-wk-tl-foot {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin: 0.5rem 0.35rem 0.25rem;
+            line-height: 1.4;
         }
         .admin-cal-month-wrap {
             max-height: min(62vh, 560px);
@@ -430,73 +608,6 @@
         @media (min-width: 960px) {
             .admin-cal-month-cell { min-height: 92px; }
             .admin-cal-month-cell .ev-line { font-size: 0.68rem; }
-        }
-        .admin-cal-day-block {
-            padding: 0.65rem 0.85rem 0.85rem;
-            background: transparent;
-            border-bottom: 1px solid var(--cal-line);
-            transition: background 0.15s ease;
-        }
-        .admin-cal-day-block:last-child {
-            border-bottom: none;
-        }
-        .admin-cal-day-block:hover {
-            background: rgba(255, 255, 255, 0.35);
-        }
-        .admin-cal-day-h {
-            font-family: var(--font-body);
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: none;
-            letter-spacing: 0.02em;
-            color: var(--text-main);
-            margin-bottom: 0.45rem;
-        }
-        .admin-cal-day-block.is-today .admin-cal-day-h {
-            color: var(--text-accent);
-        }
-        .admin-cal-day-events {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-            font-size: 0.84rem;
-            line-height: 1.45;
-        }
-        .admin-cal-day-events li.admin-cal-gcal-ev {
-            display: block;
-            margin-bottom: 0.45rem;
-            padding: 0.5rem 0.65rem 0.55rem 0.75rem;
-            border-radius: 0 12px 12px 0;
-            border-left: 4px solid var(--cal-studio);
-            background: rgba(255, 255, 255, 0.65);
-            word-break: break-word;
-            box-shadow: 0 1px 6px rgba(119, 78, 120, 0.06);
-            cursor: pointer;
-            transition: box-shadow 0.15s ease, transform 0.12s ease;
-        }
-        .admin-cal-day-events li.admin-cal-gcal-ev:hover {
-            box-shadow: 0 3px 12px rgba(119, 78, 120, 0.1);
-        }
-        .admin-cal-day-events li.admin-cal-gcal-ev:last-child { margin-bottom: 0; }
-        .admin-cal-day-events li.admin-cal-gcal-ev.personal {
-            border-left-color: var(--cal-personal);
-        }
-        .admin-cal-gcal-ev-time {
-            display: block;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 0.15rem;
-        }
-        .admin-cal-gcal-ev-title {
-            display: block;
-            color: var(--text-main);
-            font-weight: 500;
-        }
-        .admin-cal-empty-day {
-            color: var(--text-muted);
-            font-style: normal;
-            font-size: 0.82rem;
-            margin: 0;
         }
         .admin-native-cal-legend {
             display: flex;
@@ -991,6 +1102,57 @@
                 if (monthWrap) monthWrap.hidden = calViewMode !== 'month';
             }
 
+            function formatAdminHour12(hour) {
+                var h12 = hour % 12 || 12;
+                var ap = hour < 12 ? 'AM' : 'PM';
+                return h12 + ' ' + ap;
+            }
+
+            function adminWeekHourBoundsFromData(days, events) {
+                var minH = 24;
+                var maxH = 0;
+                var any = false;
+                days.forEach(function (day) {
+                    events.forEach(function (ev) {
+                        if (ev.start >= day.endMs || ev.end <= day.startMs) return;
+                        any = true;
+                        if (ev.allDay) {
+                            minH = 0;
+                            maxH = 24;
+                            return;
+                        }
+                        var s = Math.max(ev.start, day.startMs);
+                        var e = Math.min(ev.end, day.endMs);
+                        var sh = (s - day.startMs) / 3600000;
+                        var eh = (e - day.startMs) / 3600000;
+                        minH = Math.min(minH, Math.floor(sh));
+                        maxH = Math.max(maxH, Math.ceil(eh - 1e-9));
+                    });
+                });
+                if (!any) {
+                    minH = 8;
+                    maxH = 19;
+                } else {
+                    minH = Math.max(0, minH - 1);
+                    maxH = Math.min(24, maxH + 1);
+                }
+                if (maxH <= minH) maxH = minH + 2;
+                return { startHour: minH, endHour: maxH };
+            }
+
+            function adminWeekBlockLayout(day, evS, evE, startHour, endHour, bodyHeight) {
+                var t0 = day.startMs + startHour * 3600000;
+                var t1 = day.startMs + endHour * 3600000;
+                var span = t1 - t0;
+                if (span <= 0) return null;
+                var s = Math.max(evS, t0);
+                var e = Math.min(evE, t1);
+                if (e <= s) return null;
+                var top = ((s - t0) / span) * bodyHeight;
+                var h = ((e - s) / span) * bodyHeight;
+                return { top: top, height: Math.max(4, h) };
+            }
+
             function renderAdminWeek(data) {
                 var tz = data.timeZone || 'America/Chicago';
                 var days = data.days || [];
@@ -1005,82 +1167,189 @@
                 }
                 if (!grid) return;
                 grid.innerHTML = '';
-                var timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+
+                var bounds = adminWeekHourBoundsFromData(days, events);
+                var startHour = bounds.startHour;
+                var endHour = bounds.endHour;
+                var PX_PER_H = 48;
+                var bodyHeight = (endHour - startHour) * PX_PER_H;
+                var timeFmt = new Intl.DateTimeFormat('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: tz,
+                });
                 var todayY = todayYmdInTzAdmin(tz);
+                var DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+                var wrap = document.createElement('div');
+                wrap.className = 'admin-cal-wk-tl-wrap';
+
+                var scroll = document.createElement('div');
+                scroll.className = 'admin-cal-wk-tl-scroll';
+
+                var headerRow = document.createElement('div');
+                headerRow.className = 'admin-cal-wk-tl-header-row';
+                var corner = document.createElement('div');
+                corner.className = 'admin-cal-wk-tl-corner';
+                corner.setAttribute('aria-hidden', 'true');
+                headerRow.appendChild(corner);
+
                 days.forEach(function (day) {
-                    var block = document.createElement('div');
-                    block.className = 'admin-cal-day-block';
-                    if (day.ymd === todayY) block.classList.add('is-today');
-                    block.dataset.ymd = day.ymd;
-                    block.setAttribute('tabindex', '0');
-                    block.setAttribute('aria-label', 'Select ' + day.label + ' for event details');
-                    var h = document.createElement('div');
-                    h.className = 'admin-cal-day-h';
-                    h.textContent = day.label;
+                    var pk = day.ymd.split('-').map(Number);
+                    var dLoc = new Date(pk[0], pk[1] - 1, pk[2]);
+                    var dayDow = dLoc.getDay();
+                    var hcell = document.createElement('div');
+                    hcell.className = 'admin-cal-wk-tl-head-cell';
+                    if (dayDow === 0 || dayDow === 6) hcell.classList.add('is-weekend');
+                    if (day.ymd === todayY) hcell.classList.add('is-today-head');
+                    var dowSpan = document.createElement('span');
+                    dowSpan.className = 'admin-cal-wk-tl-head-dow';
+                    dowSpan.textContent = DOWS[dayDow];
+                    var domSpan = document.createElement('span');
+                    domSpan.className = 'admin-cal-wk-tl-head-dom';
+                    domSpan.textContent = String(pk[2]);
+                    hcell.appendChild(dowSpan);
+                    hcell.appendChild(domSpan);
+                    headerRow.appendChild(hcell);
+                });
+                scroll.appendChild(headerRow);
+
+                var body = document.createElement('div');
+                body.className = 'admin-cal-wk-tl-body';
+
+                var timeGutter = document.createElement('div');
+                timeGutter.className = 'admin-cal-wk-tl-time-gutter';
+                timeGutter.style.height = bodyHeight + 'px';
+                var h;
+                for (h = startHour; h < endHour; h++) {
+                    var lab = document.createElement('div');
+                    lab.className = 'admin-cal-wk-tl-time-label';
+                    lab.style.top = (h - startHour) * PX_PER_H + 'px';
+                    lab.textContent = formatAdminHour12(h);
+                    timeGutter.appendChild(lab);
+                }
+                body.appendChild(timeGutter);
+
+                var colsWrap = document.createElement('div');
+                colsWrap.className = 'admin-cal-wk-tl-cols';
+                colsWrap.style.height = bodyHeight + 'px';
+
+                days.forEach(function (day) {
+                    var col = document.createElement('div');
+                    col.className = 'admin-cal-wk-tl-col';
+
+                    var inner = document.createElement('div');
+                    inner.className = 'admin-cal-wk-tl-col-inner';
+                    inner.style.height = bodyHeight + 'px';
+
+                    var hit = document.createElement('button');
+                    hit.type = 'button';
+                    hit.className = 'admin-cal-wk-tl-col-hit';
+                    hit.setAttribute('aria-label', 'Details for ' + day.label);
+                    hit.addEventListener('click', function () {
+                        renderAdminCalDetailPanel(day.ymd, null);
+                    });
+
+                    var gridL = document.createElement('div');
+                    gridL.className = 'admin-cal-wk-tl-grid';
+                    gridL.style.height = bodyHeight + 'px';
+                    for (h = startHour; h < endHour; h++) {
+                        var line = document.createElement('div');
+                        line.className = 'admin-cal-wk-tl-hour-line';
+                        line.style.top = (h - startHour) * PX_PER_H + 'px';
+                        gridL.appendChild(line);
+                    }
+
+                    var layer = document.createElement('div');
+                    layer.className = 'admin-cal-wk-tl-layer';
+                    layer.style.height = bodyHeight + 'px';
+
                     var dayEv = events.filter(function (ev) {
                         return ev.start < day.endMs && ev.end > day.startMs;
                     });
-                    dayEv.sort(function (a, b) { return a.start - b.start; });
-                    if (dayEv.length === 0) {
-                        var empty = document.createElement('p');
-                        empty.className = 'admin-cal-empty-day';
-                        empty.textContent = 'No events';
-                        block.appendChild(h);
-                        block.appendChild(empty);
-                    } else {
-                        var ul = document.createElement('ul');
-                        ul.className = 'admin-cal-day-events';
-                        dayEv.forEach(function (ev) {
-                            var li = document.createElement('li');
-                            li.className =
-                                'admin-cal-gcal-ev ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
-                            li.setAttribute('role', 'button');
-                            li.setAttribute('tabindex', '0');
-                            li.setAttribute('aria-label', 'Details: ' + (ev.title || 'Event'));
-                            var timeEl = document.createElement('span');
-                            timeEl.className = 'admin-cal-gcal-ev-time';
-                            var titleEl = document.createElement('span');
-                            titleEl.className = 'admin-cal-gcal-ev-title';
-                            if (ev.allDay) {
-                                timeEl.textContent = 'All day';
-                            } else {
-                                timeEl.textContent =
-                                    timeFmt.format(new Date(ev.start)) +
-                                    ' – ' +
-                                    timeFmt.format(new Date(ev.end));
-                            }
-                            titleEl.textContent = ev.title;
-                            li.appendChild(timeEl);
-                            li.appendChild(titleEl);
-                            li.addEventListener('click', function (e) {
-                                e.stopPropagation();
-                                renderAdminCalDetailPanel(day.ymd, ev.start);
-                            });
-                            li.addEventListener('keydown', function (e) {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    renderAdminCalDetailPanel(day.ymd, ev.start);
-                                }
-                            });
-                            ul.appendChild(li);
-                        });
-                        block.appendChild(h);
-                        block.appendChild(ul);
-                    }
-                    block.addEventListener('click', function (e) {
-                        if (e.target.closest('.admin-cal-gcal-ev')) return;
-                        renderAdminCalDetailPanel(day.ymd, null);
+                    dayEv.sort(function (a, b) {
+                        return a.start - b.start;
                     });
-                    block.addEventListener('keydown', function (e) {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            if (e.target.closest('.admin-cal-gcal-ev')) return;
-                            e.preventDefault();
-                            renderAdminCalDetailPanel(day.ymd, null);
+
+                    dayEv.forEach(function (ev) {
+                        var sMs = ev.start;
+                        var eMs = ev.end;
+                        if (ev.allDay) {
+                            sMs = day.startMs;
+                            eMs = day.endMs;
                         }
+                        var lay = adminWeekBlockLayout(day, sMs, eMs, startHour, endHour, bodyHeight);
+                        if (!lay) return;
+                        var blk = document.createElement('div');
+                        blk.className =
+                            'admin-cal-wk-tl-ev' + (ev.calendar === 'personal' ? ' personal' : '');
+                        blk.style.top = lay.top + 'px';
+                        blk.style.height = lay.height + 'px';
+                        blk.title = ev.title || '';
+                        var tEl = document.createElement('span');
+                        tEl.className = 'ev-t';
+                        var nEl = document.createElement('span');
+                        nEl.className = 'ev-n';
+                        if (ev.allDay) {
+                            tEl.textContent = 'All day';
+                        } else {
+                            tEl.textContent =
+                                timeFmt.format(new Date(ev.start)) +
+                                ' – ' +
+                                timeFmt.format(new Date(ev.end));
+                        }
+                        nEl.textContent = ev.title || '(No title)';
+                        blk.appendChild(tEl);
+                        blk.appendChild(nEl);
+                        blk.addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            renderAdminCalDetailPanel(day.ymd, ev.start);
+                        });
+                        layer.appendChild(blk);
                     });
-                    grid.appendChild(block);
+
+                    inner.appendChild(hit);
+                    inner.appendChild(gridL);
+                    inner.appendChild(layer);
+                    col.appendChild(inner);
+                    colsWrap.appendChild(col);
                 });
+
+                var nowCol = -1;
+                var ni;
+                for (ni = 0; ni < days.length; ni++) {
+                    if (days[ni].ymd === todayY) {
+                        nowCol = ni;
+                        break;
+                    }
+                }
+                if (nowCol >= 0) {
+                    var todayDay = days[nowCol];
+                    var t0 = todayDay.startMs + startHour * 3600000;
+                    var t1 = todayDay.startMs + endHour * 3600000;
+                    var nowMs = Date.now();
+                    if (nowMs >= t0 && nowMs <= t1) {
+                        var topNow = ((nowMs - t0) / (t1 - t0)) * bodyHeight;
+                        var lineN = document.createElement('div');
+                        lineN.className = 'admin-cal-wk-tl-now';
+                        lineN.style.top = topNow + 'px';
+                        lineN.style.left = (100 / 7) * nowCol + '%';
+                        lineN.style.width = 100 / 7 + '%';
+                        colsWrap.appendChild(lineN);
+                    }
+                }
+
+                body.appendChild(colsWrap);
+                scroll.appendChild(body);
+                wrap.appendChild(scroll);
+                grid.appendChild(wrap);
+
+                var foot = document.createElement('p');
+                foot.className = 'admin-cal-wk-tl-foot';
+                foot.textContent =
+                    'Vertical gaps are free time. Tap a block for full title and details below; tap empty space in a day for that day’s list.';
+                grid.appendChild(foot);
+
                 if (days[0] && days[0].ymd) stateWeekSundayYmd = days[0].ymd;
                 adminCalLoadedOnce = true;
                 setAdminCalNavDisabled(false);
