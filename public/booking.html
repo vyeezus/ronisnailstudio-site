@@ -6,11 +6,11 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="apple-touch-icon" href="favicon.png">
     <link rel="preconnect" href="https://script.google.com" crossorigin>
-    <link rel="preload" href="booking-v3.js?v=mobile_calendar_v1" as="script">
+    <link rel="preload" href="booking-v3.js?v=booking_cal_week_gc_1" as="script">
     <title>Select Time Slot | Roni's Nail Studio</title>
     <meta name="description" content="Choose your preferred date and time for your custom nail service. Select from available slots.">
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
     <style>
         body.page-booking .hero {
             max-width: 100%;
@@ -69,12 +69,54 @@
             letter-spacing: 0.5px;
         }
 
-        /* Calendar */
+        /* Calendar — Google Calendar–inspired (Roboto + grid lines); site chrome outside this block unchanged */
         .calendar-section {
+            --gcal-blue: #1a73e8;
+            --gcal-line: #dadce0;
+            --gcal-text: #3c4043;
+            --gcal-muted: #70757a;
+            --gcal-surface: #fff;
+            --gcal-weekend: #f8f9fa;
             margin-bottom: 2.5rem;
             position: relative;
             overflow-x: hidden;
             max-width: 100%;
+            font-family: 'Roboto', 'Segoe UI', system-ui, sans-serif;
+        }
+        .cal-view-toggle {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 0.85rem;
+            padding: 3px;
+            border-radius: 4px;
+            background: var(--gcal-weekend);
+            border: 1px solid var(--gcal-line);
+            max-width: 280px;
+        }
+        .cal-view-toggle button {
+            flex: 1;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 7px 10px;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--gcal-muted);
+            cursor: pointer;
+        }
+        .cal-view-toggle button.is-active {
+            background: var(--gcal-surface);
+            color: var(--gcal-blue);
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.2);
+        }
+        .cal-pane-month,
+        .cal-pane-week {
+            min-width: 0;
+        }
+        .cal-pane-month[hidden],
+        .cal-pane-week[hidden] {
+            display: none !important;
         }
         .calendar-loading-panel {
             margin-bottom: 0.5rem;
@@ -127,26 +169,26 @@
             justify-content: space-between;
             align-items: center;
             gap: 0.35rem;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
             min-width: 0;
         }
 
         .cal-header h3 {
-            font-family: var(--font-heading);
-            font-size: clamp(0.78rem, 3.5vw, 1.1rem);
+            font-family: inherit;
+            font-size: clamp(0.95rem, 3.2vw, 1.15rem);
             font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--text-main);
+            text-transform: none;
+            letter-spacing: -0.02em;
+            color: var(--gcal-text);
             flex: 1;
             min-width: 0;
             text-align: center;
-            line-height: 1.25;
+            line-height: 1.3;
         }
 
         .cal-nav {
-            background: none;
-            border: 1px solid rgba(178, 115, 154, 0.2);
+            background: var(--gcal-surface);
+            border: 1px solid var(--gcal-line);
             border-radius: 50%;
             width: 36px;
             height: 36px;
@@ -155,30 +197,28 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 1.1rem;
-            color: var(--text-muted);
-            transition: all 0.2s;
+            font-size: 1.15rem;
+            color: var(--gcal-muted);
+            transition: background 0.15s, color 0.15s;
         }
-        .cal-nav:hover {
-            background: rgba(255,255,255,0.5);
-            color: var(--text-accent);
-            border-color: var(--text-accent);
+        .cal-nav:hover:not(:disabled) {
+            background: var(--gcal-weekend);
+            color: var(--gcal-text);
         }
         .cal-nav:disabled {
-            opacity: 0.38;
+            opacity: 0.35;
             cursor: not-allowed;
             pointer-events: none;
-        }
-        .cal-nav:disabled:hover {
-            background: none;
-            color: var(--text-muted);
-            border-color: rgba(178, 115, 154, 0.2);
         }
 
         .cal-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 4px;
+            gap: 1px;
+            padding: 1px;
+            background: var(--gcal-line);
+            border-radius: 8px;
+            overflow: hidden;
             text-align: center;
             max-width: 100%;
             min-width: 0;
@@ -190,70 +230,148 @@
         }
 
         .cal-day-label {
-            font-family: var(--font-body);
-            font-size: 0.7rem;
-            font-weight: 600;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 500;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-muted);
-            padding: 0.5rem 0;
+            letter-spacing: 0.04em;
+            color: var(--gcal-muted);
+            padding: 8px 2px;
+            background: var(--gcal-surface);
         }
 
         .cal-day {
-            font-family: var(--font-body);
-            font-size: 0.9rem;
-            padding: 0.6rem 0;
-            border-radius: 12px;
+            font-family: inherit;
+            font-size: 0.82rem;
+            padding: 0.45rem 0;
+            border-radius: 0;
             border: none;
-            background: transparent;
-            color: var(--text-main);
+            background: var(--gcal-surface);
+            color: var(--gcal-text);
             cursor: default;
-            transition: all 0.2s;
+            transition: background 0.12s;
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
             max-width: 100%;
             min-width: 0;
+            min-height: 2.35rem;
             box-sizing: border-box;
             margin: 0;
-            font: inherit;
+            font-weight: 400;
             line-height: 1.2;
         }
 
         .cal-day.available {
             cursor: pointer;
             font-weight: 500;
-            background: rgba(255, 255, 255, 0.4);
         }
-        /* scale() on hover overflows the grid on narrow phones and enables horizontal pan */
         @media (hover: hover) and (pointer: fine) {
             .cal-day.available:hover {
-                background: rgba(178, 115, 154, 0.15);
-                transform: scale(1.05);
+                background: #f1f3f4;
             }
         }
         .cal-day.available:active {
-            background: rgba(178, 115, 154, 0.2);
+            background: #e8eaed;
         }
 
         .cal-day.selected {
-            background: var(--text-accent) !important;
+            background: var(--gcal-blue) !important;
             color: #fff !important;
-            font-weight: 600;
+            font-weight: 500;
         }
 
         .cal-day.past, .cal-day.empty {
-            color: rgba(0,0,0,0.15);
+            color: #dadce0;
+            background: var(--gcal-weekend);
+            text-decoration: none;
         }
 
         .cal-day.unavailable {
-            color: rgba(0,0,0,0.2);
+            color: var(--gcal-muted);
             text-decoration: line-through;
             cursor: not-allowed;
+            background: var(--gcal-surface);
         }
 
-        .cal-day.today {
-            border: 1px solid var(--text-accent);
+        .cal-day.today:not(.selected) {
+            box-shadow: inset 0 0 0 2px var(--gcal-blue);
+            color: var(--gcal-blue);
+            font-weight: 600;
+        }
+
+        /* Week strip (Google-style row) */
+        .cal-week-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 1px;
+            padding: 1px;
+            background: var(--gcal-line);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .cal-week-dow {
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--gcal-muted);
+            text-align: center;
+            padding: 8px 2px 4px;
+            background: var(--gcal-surface);
+        }
+        .cal-week-dow.is-weekend {
+            background: var(--gcal-weekend);
+        }
+        .cal-day.cal-week-day {
+            min-height: 4.25rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 6px 4px 8px;
+            font-size: 0.78rem;
+        }
+        .cal-day.cal-week-day .cal-week-dom {
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .cal-day.cal-week-day .cal-week-hint {
+            font-size: 10px;
+            color: var(--gcal-muted);
+            line-height: 1.2;
+            font-weight: 400;
+        }
+        .cal-day.cal-week-day.available .cal-week-hint {
+            color: #137333;
+        }
+        .cal-day.cal-week-day.unavailable {
+            text-decoration: none;
+        }
+        .cal-day.cal-week-day.unavailable .cal-week-hint {
+            color: var(--gcal-muted);
+            text-decoration: none;
+        }
+        .cal-day.cal-week-day.today:not(.selected) .cal-week-dom {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--gcal-blue);
+            color: #fff;
+            font-weight: 500;
+        }
+        .cal-day.cal-week-day.selected .cal-week-dom {
+            background: transparent;
+            color: inherit;
+        }
+        .cal-day.cal-week-day.selected {
+            background: #e8f0fe !important;
+            color: var(--gcal-blue) !important;
+            box-shadow: inset 0 0 0 2px var(--gcal-blue);
         }
 
         .slots-section {
@@ -523,10 +641,14 @@
             
             <!-- Calendar -->
             <div class="calendar-section">
+                <div class="cal-view-toggle" role="group" aria-label="Calendar view">
+                    <button type="button" id="cal-view-month" class="is-active">Month</button>
+                    <button type="button" id="cal-view-week">Week</button>
+                </div>
                 <div class="cal-header">
-                    <button class="cal-nav" id="cal-prev">‹</button>
+                    <button type="button" class="cal-nav" id="cal-prev" aria-label="Previous">‹</button>
                     <h3 id="cal-month-label"></h3>
-                    <button class="cal-nav" id="cal-next">›</button>
+                    <button type="button" class="cal-nav" id="cal-next" aria-label="Next">›</button>
                 </div>
                 <div id="calendar-loading" class="calendar-loading-panel" role="status" aria-live="polite">
                     <p class="calendar-loading-text">
@@ -535,7 +657,12 @@
                     </p>
                     <div class="cal-skeleton-block" aria-hidden="true"></div>
                 </div>
-                <div class="cal-grid" id="cal-grid"></div>
+                <div class="cal-pane-month" id="cal-pane-month">
+                    <div class="cal-grid" id="cal-grid"></div>
+                </div>
+                <div class="cal-pane-week" id="cal-pane-week" hidden>
+                    <div class="cal-week-grid" id="cal-week-grid"></div>
+                </div>
             </div>
 
             <!-- Time Slots -->
@@ -583,6 +710,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=mobile_calendar_v1"></script>
+    <script src="booking-v3.js?v=booking_cal_week_gc_1"></script>
 </body>
 </html>

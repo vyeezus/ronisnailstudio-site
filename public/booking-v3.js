@@ -156,6 +156,24 @@ function bootBookingPage() {
     currentYear = today.getFullYear();
     currentMonth = today.getMonth();
 
+    function stripTimeLocal(d) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    function startOfSundayWeek(d) {
+        const x = stripTimeLocal(d);
+        x.setDate(x.getDate() - x.getDay());
+        return x;
+    }
+    function parseYmdToLocalDate(ymd) {
+        const p = String(ymd).split('-').map(Number);
+        if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return stripTimeLocal(todayStart);
+        return new Date(p[0], p[1] - 1, p[2]);
+    }
+    const minWeekSunday = startOfSundayWeek(minBookableStart);
+    const maxWeekSunday = startOfSundayWeek(parseYmdToLocalDate(maxBookableYmd));
+    let weekViewSunday = new Date(minWeekSunday.getTime());
+    let calViewMode = 'month';
+
     /** Calendar month index for comparisons (year * 12 + month 0–11). */
     function monthKey(year, month0) {
         return year * 12 + month0;
@@ -172,16 +190,30 @@ function bootBookingPage() {
 
     function updateCalNavState() {
         if (!prevBtn || !nextBtn) return;
-        const vk = monthKey(currentYear, currentMonth);
-        const atMin = vk <= bookingWindowMinKey;
-        const atMax = vk >= bookingWindowMaxKey;
-        prevBtn.disabled = atMin;
-        nextBtn.disabled = atMax;
-        prevBtn.setAttribute('aria-disabled', atMin ? 'true' : 'false');
-        nextBtn.setAttribute('aria-disabled', atMax ? 'true' : 'false');
+        if (calViewMode === 'week') {
+            const atMin = weekViewSunday.getTime() <= minWeekSunday.getTime();
+            const atMax = weekViewSunday.getTime() >= maxWeekSunday.getTime();
+            prevBtn.disabled = atMin;
+            nextBtn.disabled = atMax;
+            prevBtn.setAttribute('aria-disabled', atMin ? 'true' : 'false');
+            nextBtn.setAttribute('aria-disabled', atMax ? 'true' : 'false');
+        } else {
+            const vk = monthKey(currentYear, currentMonth);
+            const atMin = vk <= bookingWindowMinKey;
+            const atMax = vk >= bookingWindowMaxKey;
+            prevBtn.disabled = atMin;
+            nextBtn.disabled = atMax;
+            prevBtn.setAttribute('aria-disabled', atMin ? 'true' : 'false');
+            nextBtn.setAttribute('aria-disabled', atMax ? 'true' : 'false');
+        }
     }
 
     const calGrid = document.getElementById('cal-grid');
+    const calPaneMonth = document.getElementById('cal-pane-month');
+    const calPaneWeek = document.getElementById('cal-pane-week');
+    const calWeekGrid = document.getElementById('cal-week-grid');
+    const btnCalViewMonth = document.getElementById('cal-view-month');
+    const btnCalViewWeek = document.getElementById('cal-view-week');
     const monthLabel = document.getElementById('cal-month-label');
     const prevBtn = document.getElementById('cal-prev');
     const nextBtn = document.getElementById('cal-next');
@@ -362,7 +394,41 @@ function bootBookingPage() {
         return false;
     }
 
-    function renderCalendar() {
+    function formatWeekRangeLabel() {
+        const end = new Date(weekViewSunday);
+        end.setDate(end.getDate() + 6);
+        const y = weekViewSunday.getFullYear();
+        const o = { month: 'short', day: 'numeric' };
+        if (end.getFullYear() !== y) {
+            return `${weekViewSunday.toLocaleDateString('en-US', { ...o, year: 'numeric' })} – ${end.toLocaleDateString('en-US', { ...o, year: 'numeric' })}`;
+        }
+        return `${weekViewSunday.toLocaleDateString('en-US', o)} – ${end.toLocaleDateString('en-US', o)}, ${y}`;
+    }
+
+    function setCalView(mode) {
+        calViewMode = mode === 'week' ? 'week' : 'month';
+        if (btnCalViewMonth) btnCalViewMonth.classList.toggle('is-active', calViewMode === 'month');
+        if (btnCalViewWeek) btnCalViewWeek.classList.toggle('is-active', calViewMode === 'week');
+        if (calPaneMonth) calPaneMonth.hidden = calViewMode !== 'month';
+        if (calPaneWeek) calPaneWeek.hidden = calViewMode !== 'week';
+        if (calViewMode === 'week') {
+            if (selectedDate) {
+                weekViewSunday = startOfSundayWeek(parseYmdToLocalDate(selectedDate));
+                if (weekViewSunday.getTime() < minWeekSunday.getTime()) {
+                    weekViewSunday = new Date(minWeekSunday.getTime());
+                }
+                if (weekViewSunday.getTime() > maxWeekSunday.getTime()) {
+                    weekViewSunday = new Date(maxWeekSunday.getTime());
+                }
+            } else {
+                weekViewSunday = new Date(minWeekSunday.getTime());
+            }
+        }
+        refreshCalendar();
+    }
+
+    function renderMonthCalendar() {
+        if (!calGrid) return;
         calGrid.innerHTML = '';
         monthLabel.textContent = `${MONTHS[currentMonth]} ${currentYear}`;
         DAYS.forEach(d => {
@@ -383,18 +449,18 @@ function bootBookingPage() {
 
         for (let day = 1; day <= daysInMonth; day++) {
             const btn = document.createElement('button');
+            btn.type = 'button';
             const dateObj = new Date(currentYear, currentMonth, day);
             const dayOfWeek = dateObj.getDay();
             const dateStr = formatDate(dateObj);
 
             btn.className = 'cal-day';
-            btn.textContent = day;
+            btn.textContent = String(day);
 
             if (dateObj < todayStart) {
                 btn.classList.add('past');
             } else if (dateObj < minBookableStart) {
                 btn.classList.add('unavailable');
-                if (dateStr === formatDate(today)) btn.classList.add('today');
             } else if (dateStr > maxBookableYmd) {
                 btn.classList.add('unavailable');
             } else if (!dayHours(dayOfWeek)) {
@@ -408,9 +474,78 @@ function bootBookingPage() {
                     btn.addEventListener('click', () => selectDate(dateStr, btn, dayOfWeek));
                 }
             }
+            if (dateStr === formatDate(today) && !btn.classList.contains('past')) {
+                btn.classList.add('today');
+            }
             calGrid.appendChild(btn);
         }
         updateCalNavState();
+    }
+
+    function renderWeekCalendar() {
+        if (!calWeekGrid) return;
+        calWeekGrid.innerHTML = '';
+        monthLabel.textContent = formatWeekRangeLabel();
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekViewSunday);
+            d.setDate(d.getDate() + i);
+            const dow = d.getDay();
+            const dowEl = document.createElement('div');
+            dowEl.className = 'cal-week-dow' + (dow === 0 || dow === 6 ? ' is-weekend' : '');
+            dowEl.textContent = DAYS[dow];
+            calWeekGrid.appendChild(dowEl);
+        }
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekViewSunday);
+            d.setDate(d.getDate() + i);
+            const dateStr = formatDate(d);
+            const dayOfWeek = d.getDay();
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'cal-day cal-week-day';
+
+            const domSpan = document.createElement('span');
+            domSpan.className = 'cal-week-dom';
+            domSpan.textContent = String(d.getDate());
+            const hint = document.createElement('span');
+            hint.className = 'cal-week-hint';
+            btn.appendChild(domSpan);
+            btn.appendChild(hint);
+
+            if (stripTimeLocal(d) < todayStart) {
+                btn.classList.add('past');
+                hint.textContent = '';
+            } else if (stripTimeLocal(d) < minBookableStart) {
+                btn.classList.add('unavailable');
+                hint.textContent = 'Too soon';
+            } else if (dateStr > maxBookableYmd) {
+                btn.classList.add('unavailable');
+                hint.textContent = '—';
+            } else if (!dayHours(dayOfWeek)) {
+                btn.classList.add('unavailable');
+                hint.textContent = 'Closed';
+            } else if (!hasAnyAvailableSlot(dateStr, dayOfWeek)) {
+                btn.classList.add('unavailable');
+                hint.textContent = 'Full';
+            } else {
+                btn.classList.add('available');
+                hint.textContent = 'Open';
+                if (selectedDate === dateStr) btn.classList.add('selected');
+                btn.addEventListener('click', () => selectDate(dateStr, btn, dayOfWeek));
+            }
+            if (dateStr === formatDate(today) && !btn.classList.contains('past')) {
+                btn.classList.add('today');
+            }
+            calWeekGrid.appendChild(btn);
+        }
+        updateCalNavState();
+    }
+
+    function refreshCalendar() {
+        if (calViewMode === 'week') renderWeekCalendar();
+        else renderMonthCalendar();
     }
 
     function formatDate(d) {
@@ -427,20 +562,43 @@ function bootBookingPage() {
         return slotStart.getTime() <= Date.now();
     }
 
+    if (btnCalViewMonth) {
+        btnCalViewMonth.addEventListener('click', () => setCalView('month'));
+    }
+    if (btnCalViewWeek) {
+        btnCalViewWeek.addEventListener('click', () => setCalView('week'));
+    }
+
     prevBtn.addEventListener('click', () => {
-        const prev = addCalendarMonths(currentYear, currentMonth, -1);
-        if (monthKey(prev.year, prev.month) < bookingWindowMinKey) return;
-        currentYear = prev.year;
-        currentMonth = prev.month;
-        renderCalendar();
+        if (calViewMode === 'week') {
+            const n = new Date(weekViewSunday);
+            n.setDate(n.getDate() - 7);
+            if (n.getTime() < minWeekSunday.getTime()) return;
+            weekViewSunday = n;
+            renderWeekCalendar();
+        } else {
+            const prev = addCalendarMonths(currentYear, currentMonth, -1);
+            if (monthKey(prev.year, prev.month) < bookingWindowMinKey) return;
+            currentYear = prev.year;
+            currentMonth = prev.month;
+            renderMonthCalendar();
+        }
     });
 
     nextBtn.addEventListener('click', () => {
-        const nxt = addCalendarMonths(currentYear, currentMonth, 1);
-        if (monthKey(nxt.year, nxt.month) > bookingWindowMaxKey) return;
-        currentYear = nxt.year;
-        currentMonth = nxt.month;
-        renderCalendar();
+        if (calViewMode === 'week') {
+            const n = new Date(weekViewSunday);
+            n.setDate(n.getDate() + 7);
+            if (n.getTime() > maxWeekSunday.getTime()) return;
+            weekViewSunday = n;
+            renderWeekCalendar();
+        } else {
+            const nxt = addCalendarMonths(currentYear, currentMonth, 1);
+            if (monthKey(nxt.year, nxt.month) > bookingWindowMaxKey) return;
+            currentYear = nxt.year;
+            currentMonth = nxt.month;
+            renderMonthCalendar();
+        }
     });
 
     function selectDate(dateStr, btnEl, dayOfWeek) {
@@ -451,7 +609,7 @@ function bootBookingPage() {
         selectedSlot = null;
         customerSection.style.display = 'none';
         confirmBtn.disabled = true;
-        document.querySelectorAll('.cal-day.selected').forEach(d => d.classList.remove('selected'));
+        document.querySelectorAll('.cal-day.selected').forEach(el => el.classList.remove('selected'));
         if (btnEl) btnEl.classList.add('selected');
 
         slotsSection.style.display = 'block';
@@ -723,7 +881,7 @@ function bootBookingPage() {
 
             await Promise.all([loadWorkHours(), fetchBusyTimes(ignoreEventId)]);
         } finally {
-            renderCalendar();
+            refreshCalendar();
             if (loadingEl) {
                 loadingEl.hidden = true;
                 loadingEl.style.display = 'none';
