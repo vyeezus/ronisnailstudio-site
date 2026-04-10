@@ -1533,25 +1533,30 @@ function collectCalendarWeekEvents_(rangeStart, rangeEndExclusive) {
   return out;
 }
 
+/** POST JSON flags: some proxies/clients send "true" as a string — strict === true misses and falls through to public booking → bad_date. */
+function isJsonBoolTrue_(v) {
+  return v === true || v === 'true' || v === 1 || v === '1';
+}
+
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
-    if (d.ownerCalendarWeek === true) {
+    if (isJsonBoolTrue_(d.ownerCalendarWeek)) {
       return handleOwnerCalendarWeek(d);
     }
-    if (d.adminSetWorkHours === true) {
+    if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
     }
-    if (d.ownerLookupClient === true) {
+    if (isJsonBoolTrue_(d.ownerLookupClient)) {
       return handleOwnerClientLookup(d);
     }
-    if (d.ownerDirectBooking === true) {
+    if (isJsonBoolTrue_(d.ownerDirectBooking)) {
       return handleOwnerDirectBooking(d);
     }
-    if (d.ownerProposeAlternate === true) {
+    if (isJsonBoolTrue_(d.ownerProposeAlternate)) {
       return handleOwnerProposeAlternate(d);
     }
-    if (d.reschedule === true) {
+    if (isJsonBoolTrue_(d.reschedule)) {
       return handleReschedulePost(d);
     }
     const pubDateStr = d.date ? String(d.date).split('T')[0].trim() : '';
