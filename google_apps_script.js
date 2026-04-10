@@ -129,9 +129,34 @@ function baseServiceLabelForCalendar_(serviceBlob) {
   return '';
 }
 
+/**
+ * Calendar location reads cleaner in mixed case (some feeds or views show SHOUTY text).
+ * Title-cases each word; keeps " + " between multiple base labels.
+ */
+function humanizeCalendarServiceWords_(s) {
+  const t = String(s == null ? '' : s).trim();
+  if (!t) return '';
+  return t
+    .split(/\s*\+\s*/)
+    .map(function (seg) {
+      return seg
+        .trim()
+        .split(/\s+/)
+        .map(function (w) {
+          if (!w) return w;
+          return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+        })
+        .join(' ');
+    })
+    .filter(function (x) {
+      return x.length > 0;
+    })
+    .join(' + ');
+}
+
 function calendarLocationFromTimeAndService_(timeDisplay, serviceBlob) {
   const time = String(timeDisplay == null ? '' : timeDisplay).trim();
-  const base = baseServiceLabelForCalendar_(serviceBlob);
+  const base = humanizeCalendarServiceWords_(baseServiceLabelForCalendar_(serviceBlob));
   if (time && base) return time + ' ' + base;
   if (time) return time;
   return base;
