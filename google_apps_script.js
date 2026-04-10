@@ -1446,8 +1446,11 @@ function handleOwnerDirectBooking(d) {
 }
 
 /**
- * Admin page: JSON week view (studio + personal) — no Google iframe; works on mobile WebKit.
- * POST { ownerCalendarWeek: true, adminSecret, weekStart?: 'yyyy-MM-dd' (any day in week; snaps to Sunday) }
+ * Admin page: JSON calendar (studio + personal). No iframe.
+ * POST { ownerCalendarWeek: true, adminSecret,
+ *   calView?: 'week' | 'month' (default week),
+ *   weekStart?: 'yyyy-MM-dd' (any day in week → Sunday),
+ *   month?: 'yyyy-MM' (for month view) }
  */
 function handleOwnerCalendarWeek(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
@@ -1455,6 +1458,45 @@ function handleOwnerCalendarWeek(d) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'unauthorized' })).setMimeType(ContentService.MimeType.JSON);
   }
   const tz = Session.getScriptTimeZone();
+  const viewRaw = String(d.calView == null ? 'week' : d.calView)
+    .trim()
+    .toLowerCase();
+
+  if (viewRaw === 'month') {
+    let year;
+    let month0;
+    const mk = d.month ? String(d.month).trim() : '';
+    if (/^\d{4}-\d{2}$/.test(mk)) {
+      const pp = mk.split('-');
+      year = parseInt(pp[0], 10);
+      month0 = parseInt(pp[1], 10) - 1;
+    } else {
+      const now = new Date();
+      year = now.getFullYear();
+      month0 = now.getMonth();
+    }
+    if (isNaN(year) || month0 < 0 || month0 > 11) {
+      const now2 = new Date();
+      year = now2.getFullYear();
+      month0 = now2.getMonth();
+    }
+    const monthStart = new Date(year, month0, 1, 0, 0, 0);
+    const monthEndExclusive = new Date(year, month0 + 1, 1, 0, 0, 0);
+    const events = collectCalendarWeekEvents_(monthStart, monthEndExclusive);
+    const built = buildMonthDaysPayload_(year, month0, tz);
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        status: 'success',
+        timeZone: tz,
+        calView: 'month',
+        month: built.monthKey,
+        leadingBlankDays: built.leadingBlankDays,
+        days: built.days,
+        events: events,
+      })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
   let weekStart;
   const ws = d.weekStart ? String(d.weekStart).split('T')[0].trim() : '';
   if (ws && /^\d{4}-\d{2}-\d{2}$/.test(ws)) {
@@ -1477,10 +1519,32 @@ function handleOwnerCalendarWeek(d) {
     JSON.stringify({
       status: 'success',
       timeZone: tz,
+      calView: 'week',
       days: days,
       events: events,
     })
   ).setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildMonthDaysPayload_(year, month0, tz) {
+  const leadingBlankDays = new Date(year, month0, 1, 0, 0, 0).getDay();
+  const lastDayNum = new Date(year, month0 + 1, 0).getDate();
+  const days = [];
+  for (var dom = 1; dom <= lastDayNum; dom++) {
+    const ymd = Utilities.formatDate(new Date(year, month0, dom), tz, 'yyyy-MM-dd');
+    const dayStart = parseYmdAndTimeLocal_(ymd, '00:00:00');
+    const nextDay = new Date(year, month0, dom + 1, 0, 0, 0);
+    const label = Utilities.formatDate(new Date(year, month0, dom), tz, 'EEE, MMM d');
+    days.push({
+      ymd: ymd,
+      startMs: dayStart.getTime(),
+      endMs: nextDay.getTime(),
+      label: label,
+      dayOfMonth: dom,
+    });
+  }
+  const monthKey = Utilities.formatDate(new Date(year, month0, 1), tz, 'yyyy-MM');
+  return { leadingBlankDays: leadingBlankDays, days: days, monthKey: monthKey };
 }
 
 function buildWeekDaysPayload_(weekStart, tz) {

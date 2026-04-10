@@ -8,15 +8,17 @@ Usage (from repo root):
 Then open:
   http://127.0.0.1:8765/admin-owner-booking.html
 
-By default, POSTs for the admin native week calendar (ownerCalendarWeek) are answered with
+By default, POSTs for the admin native calendar (ownerCalendarWeek, week or month) are answered with
 **mock data** on this machine only, so you can preview the UI without deploying Apps Script.
 Other POSTs still go to production.
 
   LOCAL_MOCK_ADMIN_CALENDAR=0   # send ownerCalendarWeek to live API instead
   LOCAL_BOOKING_UPSTREAM=...    # alternate booking URL
 """
+import calendar
 import json
 import os
+import re
 import sys
 from typing import Optional
 from http import HTTPStatus
@@ -43,14 +45,77 @@ def _local_dt_to_ms(dt: datetime) -> int:
 
 
 def mock_owner_calendar_week_if_applicable(body: bytes) -> Optional[bytes]:
-    """If body is admin week-calendar POST, return fake JSON so UI works without deployed GAS."""
+    """If body is admin calendar POST, return fake JSON so UI works without deployed GAS."""
     try:
         d = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
         return None
     if not _json_bool_true(d.get("ownerCalendarWeek")):
         return None
+    view = str(d.get("calView") or "week").strip().lower()
     now = datetime.now()
+
+    if view == "month":
+        mk = str(d.get("month") or "").strip()
+        if re.match(r"^\d{4}-\d{2}$", mk):
+            y, mo = int(mk[:4]), int(mk[5:7])
+        else:
+            y, mo = now.year, now.month
+        if mo < 1 or mo > 12:
+            y, mo = now.year, now.month
+        first = datetime(y, mo, 1, 0, 0, 0, 0)
+        # JS Date.getDay(): Sunday=0. Python weekday(): Monday=0 … Sunday=6
+        leading_blank_days = (first.weekday() + 1) % 7
+        last_dom = calendar.monthrange(y, mo)[1]
+        days = []
+        for dom in range(1, last_dom + 1):
+            cur = datetime(y, mo, dom, 0, 0, 0, 0)
+            nxt = cur + timedelta(days=1)
+            ymd = cur.strftime("%Y-%m-%d")
+            label = cur.strftime("%a, %b ") + str(dom)
+            days.append(
+                {
+                    "ymd": ymd,
+                    "startMs": _local_dt_to_ms(cur),
+                    "endMs": _local_dt_to_ms(nxt),
+                    "label": label,
+                    "dayOfMonth": dom,
+                }
+            )
+        month_key = f"{y:04d}-{mo:02d}"
+        d_studio = min(15, last_dom)
+        d_personal = min(22, last_dom)
+        t0 = datetime(y, mo, d_studio, 10, 0, 0, 0)
+        t1 = datetime(y, mo, d_studio, 11, 30, 0, 0)
+        t2 = datetime(y, mo, d_personal, 14, 0, 0, 0)
+        t3 = datetime(y, mo, d_personal, 15, 30, 0, 0)
+        events = [
+            {
+                "start": _local_dt_to_ms(t0),
+                "end": _local_dt_to_ms(t1),
+                "title": "Preview · studio (mock data)",
+                "allDay": False,
+                "calendar": "studio",
+            },
+            {
+                "start": _local_dt_to_ms(t2),
+                "end": _local_dt_to_ms(t3),
+                "title": "Preview · personal (mock data)",
+                "allDay": False,
+                "calendar": "personal",
+            },
+        ]
+        payload = {
+            "status": "success",
+            "timeZone": "America/Chicago",
+            "calView": "month",
+            "month": month_key,
+            "leadingBlankDays": leading_blank_days,
+            "days": days,
+            "events": events,
+        }
+        return json.dumps(payload).encode("utf-8")
+
     days_back = (now.weekday() + 1) % 7
     sun = (now - timedelta(days=days_back)).replace(hour=0, minute=0, second=0, microsecond=0)
     days = []
@@ -91,6 +156,7 @@ def mock_owner_calendar_week_if_applicable(body: bytes) -> Optional[bytes]:
     payload = {
         "status": "success",
         "timeZone": "America/Chicago",
+        "calView": "week",
         "days": days,
         "events": events,
     }
