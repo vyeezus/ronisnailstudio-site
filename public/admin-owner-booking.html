@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Book client (admin) | Roni's Nail Studio</title>
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
     <style>
         .admin-book-page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
         .admin-book-layout { display: flex; flex-direction: column; gap: 1.35rem; }
@@ -16,12 +16,13 @@
         .admin-book-cal-aside { width: 100%; max-width: 520px; margin: 0 auto; }
         .cal-embed-label {
             display: block;
-            font-size: 0.72rem;
-            font-weight: 600;
+            font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            font-weight: 500;
             text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: var(--text-muted);
-            margin-bottom: 0.45rem;
+            letter-spacing: 0.06em;
+            color: #70757a;
+            margin-bottom: 8px;
         }
         @media (min-width: 960px) {
             .admin-book-layout {
@@ -111,203 +112,294 @@
             to { transform: rotate(360deg); }
         }
 
+        /* Admin calendar — Google Calendar–inspired (neutral, high legibility) */
+        .admin-native-cal {
+            --gcal-line: #dadce0;
+            --gcal-text: #3c4043;
+            --gcal-text-sec: #70757a;
+            --gcal-blue: #1a73e8;
+            --gcal-surface: #fff;
+            --gcal-surface-subtle: #f8f9fa;
+            --gcal-studio: #b2739a;
+            --gcal-personal: #1a73e8;
+            margin-bottom: 1rem;
+            padding: 12px 12px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--gcal-line);
+            background: var(--gcal-surface);
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px 1px rgba(60, 64, 67, 0.06);
+            font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
         .admin-cal-view-toggle {
             display: flex;
-            gap: 0;
-            margin-bottom: 0.65rem;
-            border-radius: 10px;
-            overflow: hidden;
-            border: 1px solid rgba(178, 115, 154, 0.3);
+            gap: 2px;
+            margin-bottom: 12px;
+            padding: 2px;
+            border-radius: 4px;
+            background: var(--gcal-surface-subtle);
+            border: none;
         }
         .admin-cal-view-toggle button {
             flex: 1;
-            font-family: var(--font-body);
-            font-size: 0.78rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            padding: 0.5rem 0.4rem;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: normal;
+            padding: 7px 10px;
             border: none;
-            background: rgba(255, 255, 255, 0.5);
-            color: var(--text-muted);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--gcal-text-sec);
             cursor: pointer;
         }
-        .admin-cal-view-toggle button.is-active {
-            background: rgba(178, 115, 154, 0.2);
-            color: var(--text-main);
+        .admin-cal-view-toggle button:hover {
+            color: var(--gcal-text);
         }
-        .admin-native-cal {
-            margin-bottom: 1rem;
-            padding: 0.85rem 0.75rem 1rem;
-            border-radius: 12px;
-            border: 1px solid rgba(178, 115, 154, 0.22);
-            background: rgba(255, 255, 255, 0.65);
+        .admin-cal-view-toggle button.is-active {
+            background: var(--gcal-surface);
+            color: var(--gcal-blue);
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.18);
         }
         .admin-native-cal-toolbar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.5rem 0.65rem;
-            margin-bottom: 0.85rem;
+            gap: 6px 10px;
+            margin-bottom: 12px;
         }
         .admin-native-cal-toolbar button {
-            font-family: var(--font-body);
-            border: 1px solid rgba(178, 115, 154, 0.35);
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
-            padding: 0.45rem 0.75rem;
-            font-size: 0.9rem;
+            font-family: inherit;
+            border: 1px solid var(--gcal-line);
+            background: var(--gcal-surface);
+            color: var(--gcal-text-sec);
             cursor: pointer;
-            color: var(--text-main);
         }
-        .admin-native-cal-toolbar button:hover {
-            border-color: var(--text-accent);
-            color: var(--text-accent);
+        .admin-native-cal-toolbar button:hover:not(:disabled) {
+            background: var(--gcal-surface-subtle);
+            color: var(--gcal-text);
         }
         .admin-native-cal-toolbar button:disabled {
-            opacity: 0.45;
+            opacity: 0.38;
             cursor: not-allowed;
+        }
+        #admin-cal-prev,
+        #admin-cal-next {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            border-radius: 50%;
+            font-size: 18px;
+            line-height: 1;
         }
         .admin-cal-range-label {
             flex: 1;
             min-width: 0;
-            font-family: var(--font-body);
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: var(--text-main);
+            font-family: inherit;
+            font-size: clamp(1rem, 2.8vw, 1.25rem);
+            font-weight: 400;
+            color: var(--gcal-text);
             text-align: center;
+            letter-spacing: -0.02em;
         }
         .admin-cal-refresh {
             margin-left: auto;
+            border-radius: 999px;
+            padding: 7px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gcal-blue);
+            border-color: var(--gcal-line);
+        }
+        .admin-cal-refresh:hover:not(:disabled) {
+            background: rgba(26, 115, 232, 0.06);
+            border-color: rgba(26, 115, 232, 0.35);
+            color: var(--gcal-blue);
         }
         .admin-cal-week-wrap { max-height: min(58vh, 520px); overflow: hidden; display: flex; flex-direction: column; }
         .admin-cal-week-wrap[hidden] { display: none !important; }
         .admin-cal-week-by-day {
             display: flex;
             flex-direction: column;
-            gap: 0.65rem;
+            gap: 0;
             flex: 1;
             min-height: 0;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--gcal-line);
+            border-radius: 8px;
+            overflow-x: hidden;
         }
         .admin-cal-month-wrap {
             max-height: min(62vh, 560px);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
+            border-radius: 8px;
         }
         .admin-cal-month-wrap[hidden] { display: none !important; }
         .admin-cal-month-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 3px;
+            gap: 1px;
+            padding: 1px;
+            background: var(--gcal-line);
+            border-radius: 8px;
+            overflow: hidden;
         }
         .admin-cal-month-dow {
-            font-weight: 700;
+            font-weight: 500;
             text-align: center;
-            padding: 0.2rem 0.1rem;
-            color: var(--text-muted);
-            font-size: 0.62rem;
+            padding: 8px 4px;
+            color: var(--gcal-text-sec);
+            font-size: 11px;
+            background: var(--gcal-surface);
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
         .admin-cal-month-cell {
-            border: 1px solid rgba(178, 115, 154, 0.14);
-            border-radius: 8px;
-            min-height: 76px;
-            padding: 0.2rem 0.15rem 0.25rem;
-            background: rgba(255, 255, 255, 0.45);
+            min-height: 80px;
+            padding: 4px 5px 5px;
+            background: var(--gcal-surface);
             overflow: hidden;
         }
+        .admin-cal-month-cell.is-weekend {
+            background: var(--gcal-surface-subtle);
+        }
         .admin-cal-month-cell.is-pad {
-            min-height: 0;
+            min-height: 8px;
             padding: 0;
-            border: none;
-            background: transparent;
+            background: var(--gcal-surface-subtle);
             pointer-events: none;
         }
         .admin-cal-month-cell .dom {
-            font-weight: 700;
-            font-size: 0.72rem;
-            margin-bottom: 0.12rem;
-            color: var(--text-main);
+            font-weight: 500;
+            font-size: 12px;
+            margin-bottom: 3px;
+            color: var(--gcal-text);
+            line-height: 22px;
+        }
+        .admin-cal-month-cell.is-today .dom {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 26px;
+            height: 26px;
+            padding: 0 4px;
+            border-radius: 50%;
+            background: var(--gcal-blue);
+            color: #fff;
+            font-weight: 500;
         }
         .admin-cal-month-cell .ev-line {
-            font-size: 0.6rem;
-            line-height: 1.2;
-            margin-bottom: 0.08rem;
+            display: block;
+            font-size: 10px;
+            line-height: 1.25;
+            margin-top: 3px;
+            padding: 2px 4px 2px 6px;
+            border-radius: 3px;
+            border-left: 3px solid var(--gcal-studio);
+            background: rgba(178, 115, 154, 0.1);
+            color: var(--gcal-text);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .admin-cal-month-cell .ev-line .dot {
-            display: inline-block;
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            margin-right: 0.2rem;
-            vertical-align: 0.1em;
+        .admin-cal-month-cell .ev-line.personal {
+            border-left-color: var(--gcal-personal);
+            background: rgba(26, 115, 232, 0.08);
         }
-        .admin-cal-month-cell .ev-line .dot.studio { background: #b2739a; }
-        .admin-cal-month-cell .ev-line .dot.personal { background: #5c7cfa; }
+        .admin-cal-month-cell .ev-line .ev-time {
+            color: var(--gcal-text-sec);
+            font-weight: 400;
+            margin-right: 3px;
+        }
         @media (min-width: 960px) {
-            .admin-cal-month-cell { min-height: 88px; }
-            .admin-cal-month-cell .ev-line { font-size: 0.65rem; }
+            .admin-cal-month-cell { min-height: 92px; }
+            .admin-cal-month-cell .ev-line { font-size: 11px; }
         }
         .admin-cal-day-block {
-            border-radius: 10px;
-            padding: 0.55rem 0.65rem;
-            background: rgba(255, 255, 255, 0.55);
-            border: 1px solid rgba(178, 115, 154, 0.12);
+            padding: 10px 12px 12px;
+            background: var(--gcal-surface);
+            border-bottom: 1px solid var(--gcal-line);
+        }
+        .admin-cal-day-block:last-child {
+            border-bottom: none;
         }
         .admin-cal-day-h {
-            font-family: var(--font-body);
-            font-size: 0.72rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--text-accent);
-            margin-bottom: 0.35rem;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: normal;
+            color: var(--gcal-text);
+            margin-bottom: 8px;
+        }
+        .admin-cal-day-block.is-today .admin-cal-day-h {
+            color: var(--gcal-blue);
         }
         .admin-cal-day-events {
             list-style: none;
             margin: 0;
             padding: 0;
-            font-size: 0.82rem;
-            line-height: 1.45;
-            color: var(--text-main);
+            font-size: 13px;
+            line-height: 1.4;
         }
-        .admin-cal-day-events li {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.35rem;
-            margin-bottom: 0.35rem;
+        .admin-cal-day-events li.admin-cal-gcal-ev {
+            display: block;
+            margin-bottom: 6px;
+            padding: 8px 10px 8px 12px;
+            border-radius: 0 4px 4px 0;
+            border-left: 4px solid var(--gcal-studio);
+            background: rgba(178, 115, 154, 0.08);
             word-break: break-word;
         }
-        .admin-cal-day-events li:last-child { margin-bottom: 0; }
-        .admin-cal-empty-day { color: var(--text-muted); font-style: italic; font-size: 0.8rem; }
-        .cal-chip {
-            flex-shrink: 0;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-top: 0.35rem;
+        .admin-cal-day-events li.admin-cal-gcal-ev:last-child { margin-bottom: 0; }
+        .admin-cal-day-events li.admin-cal-gcal-ev.personal {
+            border-left-color: var(--gcal-personal);
+            background: rgba(26, 115, 232, 0.06);
         }
-        .cal-chip.studio { background: #b2739a; }
-        .cal-chip.personal { background: #5c7cfa; }
+        .admin-cal-gcal-ev-time {
+            display: block;
+            font-size: 12px;
+            color: var(--gcal-text-sec);
+            margin-bottom: 2px;
+        }
+        .admin-cal-gcal-ev-title {
+            display: block;
+            color: var(--gcal-text);
+            font-weight: 400;
+        }
+        .admin-cal-empty-day {
+            color: var(--gcal-text-sec);
+            font-style: normal;
+            font-size: 13px;
+            margin: 0;
+        }
         .admin-native-cal-legend {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.75rem;
-            margin-top: 0.65rem;
-            font-size: 0.72rem;
-            color: var(--text-muted);
+            gap: 14px;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--gcal-line);
+            font-size: 12px;
+            color: var(--gcal-text-sec);
         }
-        .admin-native-cal-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+        .admin-native-cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .admin-native-cal-legend .cal-chip {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .admin-native-cal-legend .cal-chip.studio { background: var(--gcal-studio); }
+        .admin-native-cal-legend .cal-chip.personal { background: var(--gcal-personal); }
         .admin-native-cal-err {
-            font-size: 0.8rem;
-            color: #8b3a52;
-            margin-top: 0.5rem;
+            font-family: inherit;
+            font-size: 13px;
+            color: #d93025;
+            margin-top: 10px;
+            line-height: 1.4;
         }
     </style>
 </head>
@@ -613,6 +705,27 @@
                 var dt = new Date(p[0], p[1] - 1, p[2] + delta);
                 return ymdFromDateAdmin(dt);
             }
+            function todayYmdInTzAdmin(tz) {
+                try {
+                    var parts = new Intl.DateTimeFormat('en-US', {
+                        timeZone: tz,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                    }).formatToParts(new Date());
+                    var y = '';
+                    var m = '';
+                    var d = '';
+                    for (var i = 0; i < parts.length; i++) {
+                        var p = parts[i];
+                        if (p.type === 'year') y = p.value;
+                        if (p.type === 'month') m = p.value;
+                        if (p.type === 'day') d = p.value;
+                    }
+                    if (y && m && d) return y + '-' + m + '-' + d;
+                } catch (e) { /* ignore */ }
+                return ymdFromDateAdmin(new Date());
+            }
             function currentMonthYmAdmin() {
                 var d = new Date();
                 return d.getFullYear() + '-' + pad2Admin(d.getMonth() + 1);
@@ -677,19 +790,22 @@
                 if (!grid) return;
                 grid.innerHTML = '';
                 var timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
+                var todayY = todayYmdInTzAdmin(tz);
                 days.forEach(function (day) {
                     var block = document.createElement('div');
                     block.className = 'admin-cal-day-block';
+                    if (day.ymd === todayY) block.classList.add('is-today');
                     var h = document.createElement('div');
                     h.className = 'admin-cal-day-h';
                     h.textContent = day.label;
                     var dayEv = events.filter(function (ev) {
                         return ev.start < day.endMs && ev.end > day.startMs;
                     });
+                    dayEv.sort(function (a, b) { return a.start - b.start; });
                     if (dayEv.length === 0) {
                         var empty = document.createElement('p');
                         empty.className = 'admin-cal-empty-day';
-                        empty.textContent = 'Nothing scheduled';
+                        empty.textContent = 'No events';
                         block.appendChild(h);
                         block.appendChild(empty);
                     } else {
@@ -697,20 +813,23 @@
                         ul.className = 'admin-cal-day-events';
                         dayEv.forEach(function (ev) {
                             var li = document.createElement('li');
-                            var chip = document.createElement('i');
-                            chip.className = 'cal-chip ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
-                            chip.setAttribute('aria-hidden', 'true');
-                            var span = document.createElement('span');
-                            var timePart;
+                            li.className =
+                                'admin-cal-gcal-ev ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
+                            var timeEl = document.createElement('span');
+                            timeEl.className = 'admin-cal-gcal-ev-time';
+                            var titleEl = document.createElement('span');
+                            titleEl.className = 'admin-cal-gcal-ev-title';
                             if (ev.allDay) {
-                                timePart = 'All day';
+                                timeEl.textContent = 'All day';
                             } else {
-                                timePart =
-                                    timeFmt.format(new Date(ev.start)) + ' – ' + timeFmt.format(new Date(ev.end));
+                                timeEl.textContent =
+                                    timeFmt.format(new Date(ev.start)) +
+                                    ' – ' +
+                                    timeFmt.format(new Date(ev.end));
                             }
-                            span.textContent = timePart + ' · ' + ev.title;
-                            li.appendChild(chip);
-                            li.appendChild(span);
+                            titleEl.textContent = ev.title;
+                            li.appendChild(timeEl);
+                            li.appendChild(titleEl);
                             ul.appendChild(li);
                         });
                         block.appendChild(h);
@@ -749,9 +868,13 @@
                     grid.appendChild(pad);
                 }
                 var timeFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
-                days.forEach(function (day) {
+                var todayY = todayYmdInTzAdmin(tz);
+                days.forEach(function (day, dayIdx) {
                     var cell = document.createElement('div');
                     cell.className = 'admin-cal-month-cell';
+                    var col = (leading + dayIdx) % 7;
+                    if (col === 0 || col === 6) cell.classList.add('is-weekend');
+                    if (day.ymd === todayY) cell.classList.add('is-today');
                     var domEl = document.createElement('div');
                     domEl.className = 'dom';
                     domEl.textContent = String(day.dayOfMonth != null ? day.dayOfMonth : '');
@@ -762,13 +885,13 @@
                     dayEv.sort(function (a, b) { return a.start - b.start; });
                     dayEv.forEach(function (ev) {
                         var line = document.createElement('div');
-                        line.className = 'ev-line';
-                        var dot = document.createElement('span');
-                        dot.className = 'dot ' + (ev.calendar === 'personal' ? 'personal' : 'studio');
-                        dot.setAttribute('aria-hidden', 'true');
-                        var timePart = ev.allDay ? 'All day' : timeFmt.format(new Date(ev.start));
-                        line.appendChild(dot);
-                        line.appendChild(document.createTextNode(timePart + ' ' + ev.title));
+                        line.className =
+                            'ev-line' + (ev.calendar === 'personal' ? ' personal' : '');
+                        var timeSpan = document.createElement('span');
+                        timeSpan.className = 'ev-time';
+                        timeSpan.textContent = ev.allDay ? 'All day' : timeFmt.format(new Date(ev.start));
+                        line.appendChild(timeSpan);
+                        line.appendChild(document.createTextNode(' ' + (ev.title || '')));
                         cell.appendChild(line);
                     });
                     grid.appendChild(cell);
