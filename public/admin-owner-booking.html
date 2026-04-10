@@ -816,7 +816,24 @@
                             else showNativeCalErr((data && data.message) || 'Could not load calendar.');
                             return;
                         }
-                        var v = String(data.calView || calViewMode).toLowerCase();
+                        var v = String(data.calView || '').toLowerCase();
+                        if (v !== 'month' && v !== 'week') {
+                            v =
+                                data.leadingBlankDays != null &&
+                                data.month &&
+                                Array.isArray(data.days) &&
+                                data.days.length
+                                    ? 'month'
+                                    : 'week';
+                        }
+                        if (calViewMode === 'month' && v !== 'month') {
+                            showNativeCalErr(
+                                'Month view needs the latest Apps Script version deployed. Showing this week instead.'
+                            );
+                            setCalViewUi('week');
+                            renderAdminWeek(data);
+                            return;
+                        }
                         if (v === 'month') renderAdminMonth(data);
                         else renderAdminWeek(data);
                     })
