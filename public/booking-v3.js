@@ -169,6 +169,7 @@ function bootBookingPage() {
     const nameInput = document.getElementById('cust-name');
     const phoneInput = document.getElementById('cust-phone');
     const emailInput = document.getElementById('cust-email');
+    const notesInput = document.getElementById('cust-notes');
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
@@ -560,6 +561,7 @@ function bootBookingPage() {
                 date: selectedDate,
                 time: selectedSlot,
                 durationMinutes: serviceMinutes,
+                clientNotes: notesInput && notesInput.value ? notesInput.value.trim() : '',
             };
 
         try {
@@ -666,6 +668,8 @@ function bootBookingPage() {
             phoneInput.style.opacity = '0.85';
             emailInput.style.opacity = '0.85';
             confirmBtn.textContent = 'Confirm new time';
+            const notesFieldEl = document.getElementById('client-notes-field');
+            if (notesFieldEl) notesFieldEl.style.display = 'none';
             // Do not strip this event from busy times: until they confirm, it still occupies the calendar.
             // Ignoring it made overlapping slots (e.g. 3:00 for a 75m appt after 2:30) look falsely open.
         } else if (!serviceIds) {

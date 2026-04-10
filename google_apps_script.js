@@ -42,13 +42,22 @@ const RESCHEDULE_PAGE_BASE = 'https://ronisnailstudio.com/reschedule.html';
 /** Owner proposes alternate time (from booking-request email). */
 const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request.html';
 
-/** Sheet: A–K as before; L/M/N = proposed date, proposed time, modificationClientToken (2-day still uses K). */
+/** Sheet: A–N as before; O = optional client notes/requests; L/M/N = proposed date, time, modificationClientToken. */
 function generateActionToken() {
   return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
 }
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Optional booking notes: trim, cap length, strip control chars (column O + calendar description). */
+function sanitizeClientNotes_(raw) {
+  let t = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+  t = t.trim();
+  if (t.length > 2000) t = t.substring(0, 2000);
+  return t;
 }
 
 /** Sheet date column: full calendar date (avoid raw Date string in emails). */
@@ -1369,7 +1378,7 @@ function handleOwnerDirectBooking(d) {
   const ss = getCRMSpreadsheet();
   const s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const row = s.getLastRow() + 1;
-  s.appendRow([new Date(), clientName, phone, service, start, timeStr, email, 'CONFIRMED', '', actionToken, '', '', '', '']);
+  s.appendRow([new Date(), clientName, phone, service, start, timeStr, email, 'CONFIRMED', '', actionToken, '', '', '', '', '']);
   const c = CalendarApp.getCalendarById(CALENDAR_ID);
   const desc =
     'Phone: ' +
@@ -1452,9 +1461,10 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_day_or_time' })).setMimeType(ContentService.MimeType.JSON);
     }
     const actionToken = generateActionToken();
+    const clientNotes = sanitizeClientNotes_(d.clientNotes);
     const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     const row = s.getLastRow() + 1;
-    s.appendRow([new Date(), d.clientName, d.phone, d.service, pubDateStr, timeTrim, d.email, 'PENDING', '', actionToken, '', '', '', '']);
+    s.appendRow([new Date(), d.clientName, d.phone, d.service, pubDateStr, timeTrim, d.email, 'PENDING', '', actionToken, '', '', '', '', clientNotes]);
     SpreadsheetApp.flush();
     const c = CalendarApp.getCalendarById(CALENDAR_ID);
     const end = new Date(start.getTime() + durMin * 60000);
@@ -1466,7 +1476,8 @@ function doPost(e) {
       '\nService: ' +
       d.service +
       '\nDurationMinutes: ' +
-      durMin;
+      durMin +
+      (clientNotes ? '\nClient notes: ' + clientNotes : '');
     const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
     ev.setColor(PENDING_COLOR);
     const tz = Session.getScriptTimeZone();
@@ -1474,7 +1485,7 @@ function doPost(e) {
     applyBookingLocationToEvent_(ev, neatTimeEmail, d.service);
     s.getRange(row, 9).setValue(ev.getId());
     const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
-    const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken);
+    const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken, clientNotes);
     MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
     
     return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
@@ -1711,12 +1722,18 @@ function getAlternateDeclinedClientEmailHtml(name, origDate, origTime, service) 
   );
 }
 
-function getRequestEmailHtml(name, service, phone, email, date, time, eventId, actionToken) {
+function getRequestEmailHtml(name, service, phone, email, date, time, eventId, actionToken, clientNotes) {
   const q = 'action=accept&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const qr = 'action=reject&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const acc = buildBookingActionUrl(q);
   const rej = buildBookingActionUrl(qr);
   const modUrl = OWNER_MODIFY_PAGE_BASE + '?eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
+  const notesTrim = String(clientNotes == null ? '' : clientNotes).trim();
+  const notesBlock = notesTrim
+    ? '<p style="margin:12px 0 0 0;padding-top:12px;border-top:1px solid #e8e8e8;"><strong>Notes / requests:</strong><br><span style="white-space:pre-wrap;color:#333;">' +
+      escapeHtml(notesTrim) +
+      '</span></p>'
+    : '';
   return `
     <div style="font-family: sans-serif; padding: 32px; max-width: 450px; margin: auto; border: 1px solid #eaeaea; border-radius: 12px;">
       <h2 style="color: #111; font-weight: 500; font-size: 20px; text-align: center;">New Booking Request</h2>
@@ -1727,6 +1744,7 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
         <strong>Email:</strong> ${email}<br>
         <strong>Date:</strong> ${date}<br>
         <strong>Time:</strong> ${time}
+        ${notesBlock}
       </div>
       <div style="text-align: center;">
         <a href="${acc}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 500; display: block; margin-bottom: 12px;">Approve Request</a>
@@ -1807,7 +1825,17 @@ function testEmailPreview() {
   const mockPhone = "555-0199";
   const mockEmail = "test@example.com";
 
-  const reqHtml = getRequestEmailHtml(mockName, mockService, mockPhone, mockEmail, mockDate, mockTime, "test_event_id", "preview_only_invalid_token");
+  const reqHtml = getRequestEmailHtml(
+    mockName,
+    mockService,
+    mockPhone,
+    mockEmail,
+    mockDate,
+    mockTime,
+    'test_event_id',
+    'preview_only_invalid_token',
+    'Sample client note (preview only).'
+  );
   MailApp.sendEmail({ to: MY_EMAIL, subject: "PREVIEW: New Booking Request", htmlBody: reqHtml });
 
   const confHtml = getConfirmedEmailHtml(mockName, mockDate, mockTime, mockService);
