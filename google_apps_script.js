@@ -367,6 +367,10 @@ function getActiveBookingEvent_(calendar, eventId) {
  * personal). (2) installCalendarSyncTrigger() — time-based backup; deletes sometimes don’t fire
  * onEventUpdated reliably on group calendars. (3) One deployment only (Head or version, not both).
  * Optional: Editor → Services → add “Google Calendar API” so deleted/cancelled events are detected reliably.
+ *
+ * Race guard: this function snapshots the sheet once at START. If the owner clicks Approve (doGet accept)
+ * while a sync is running, the old PENDING event id is deleted and a new id is written — the sync must
+ * re-read status + event id before marking CANCELLED or it can overwrite CONFIRMED with CANCELLED.
  */
 function syncCalendarToSpreadsheet() {
   const lock = LockService.getScriptLock();
@@ -409,11 +413,47 @@ function syncCalendarToSpreadsheetBody_() {
         String(eventId).indexOf('pending') < 0
       ) {
         qualifying++;
-        const event = getActiveBookingEvent_(calendar, eventId);
+        let event = getActiveBookingEvent_(calendar, eventId);
         if (!event) {
           const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
           if (statusFresh === 'CANCELLED') {
             Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' already CANCELLED — skip (no duplicate email)');
+            continue;
+          }
+          if (statusFresh === 'CONFIRMED' || statusFresh === 'CLIENT_CONFIRMED') {
+            Logger.log(
+              'syncCalendarToSpreadsheet: row ' +
+                (i + 1) +
+                ' skip cancel — sheet is now ' +
+                statusFresh +
+                ' (approve likely raced this sync; snapshot was ' +
+                status +
+                ')'
+            );
+            continue;
+          }
+          const eventIdFresh = String(sheet.getRange(i + 1, 9).getValue() || '').trim();
+          if (eventIdFresh && eventIdFresh !== String(eventId).trim()) {
+            event = getActiveBookingEvent_(calendar, eventIdFresh);
+            if (event) {
+              Logger.log(
+                'syncCalendarToSpreadsheet: row ' +
+                  (i + 1) +
+                  ' skip cancel — event id was updated mid-sync (new id still on calendar)'
+              );
+            }
+          }
+        }
+        if (!event) {
+          const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
+          if (statusFresh === 'CONFIRMED' || statusFresh === 'CLIENT_CONFIRMED') {
+            Logger.log(
+              'syncCalendarToSpreadsheet: row ' +
+                (i + 1) +
+                ' skip cancel — re-check: now ' +
+                statusFresh +
+                ' after event id retry'
+            );
             continue;
           }
           markedCancelled++;
