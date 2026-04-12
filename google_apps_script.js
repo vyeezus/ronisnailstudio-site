@@ -1063,48 +1063,78 @@ function doGet(e) {
       return htmlPage('Invalid', '<h2>Link not valid</h2><p>This reminder link only applies to confirmed appointments.</p>');
     }
     if (action === 'client_confirm') {
-      sheet.getRange(rowIndex, 8).setValue('CLIENT_CONFIRMED');
-      const calConfirm = CalendarApp.getCalendarById(CALENDAR_ID);
-      const evConfirm = calConfirm.getEventById(eventId);
-      if (evConfirm) {
-        evConfirm.setTitle(clientConfirmedCalendarEventTitle_(clientName));
-        applyBookingLocationToEvent_(
-          evConfirm,
-          Utilities.formatDate(evConfirm.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
-          service
-        );
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(15000)) {
+        return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress.</p>');
       }
-      SpreadsheetApp.flush();
-      const neatD = formatSheetDateForEmail(dateVal);
-      const neatTime = formatSheetTimeForEmail(timeStr);
-      const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
-      const ownerBody =
-        '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client confirmed (2-day reminder)</h2><p><strong>' +
-        escapeHtml(clientName) +
-        '</strong> tapped <strong>Confirm</strong> on their reminder email.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' +
-        ownerRows +
-        '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' +
-        escapeHtml(clientEmail || '—') +
-        '</p></div>';
-      MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client confirmed appointment: ' + clientName, htmlBody: ownerBody });
-      return htmlPage('Thank you', '<h2>Thank you!</h2><p>Your appointment is confirmed. We\'ll see you soon.</p>');
+      try {
+        const statusNow = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
+        if (statusNow === 'CLIENT_CONFIRMED') {
+          return htmlPage('Confirmed', '<h2>Already confirmed</h2><p>We already have your confirmation. See you soon!</p>');
+        }
+        if (statusNow !== 'CONFIRMED') {
+          if (statusNow === 'CANCELLED' || statusNow === 'REJECTED') {
+            return htmlPage('Cancelled', '<h2>Cancelled</h2><p>This appointment has been cancelled.</p>');
+          }
+          return htmlPage('Invalid', '<h2>Link not valid</h2><p>This reminder link only applies to confirmed appointments.</p>');
+        }
+        sheet.getRange(rowIndex, 8).setValue('CLIENT_CONFIRMED');
+        const calConfirm = CalendarApp.getCalendarById(CALENDAR_ID);
+        const evConfirm = calConfirm.getEventById(eventId);
+        if (evConfirm) {
+          evConfirm.setTitle(clientConfirmedCalendarEventTitle_(clientName));
+          applyBookingLocationToEvent_(
+            evConfirm,
+            Utilities.formatDate(evConfirm.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
+            service
+          );
+        }
+        SpreadsheetApp.flush();
+        const neatD = formatSheetDateForEmail(dateVal);
+        const neatTime = formatSheetTimeForEmail(timeStr);
+        const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
+        const ownerBody =
+          '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client confirmed (2-day reminder)</h2><p><strong>' +
+          escapeHtml(clientName) +
+          '</strong> tapped <strong>Confirm</strong> on their reminder email.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' +
+          ownerRows +
+          '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' +
+          escapeHtml(clientEmail || '—') +
+          '</p></div>';
+        MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client confirmed appointment: ' + clientName, htmlBody: ownerBody });
+        return htmlPage('Thank you', '<h2>Thank you!</h2><p>Your appointment is confirmed. We\'ll see you soon.</p>');
+      } finally {
+        lock.releaseLock();
+      }
     }
     if (action === 'client_cancel') {
-      const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-      const ev = cal.getEventById(eventId);
-      if (ev) ev.deleteEvent();
-      sheet.getRange(rowIndex, 8).setValue('CANCELLED');
-      SpreadsheetApp.flush();
-      const neatD = formatSheetDateForEmail(dateVal);
-      const neatTime = formatSheetTimeForEmail(timeStr);
-      const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
-      const ownerBody = '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client cancelled (2-day reminder)</h2><p><strong>' + escapeHtml(clientName) + '</strong> cancelled their upcoming appointment.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' + ownerRows + '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' + escapeHtml(clientEmail || '—') + '</p></div>';
-      MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client cancelled appointment: ' + clientName, htmlBody: ownerBody });
-      if (clientEmail) {
-        const clientNote = '<div style="font-family:sans-serif;padding:32px;max-width:480px;margin:auto;"><p>Hi ' + escapeHtml(clientName) + ',</p><p>Your appointment on <strong>' + escapeHtml(neatD) + '</strong> at <strong>' + escapeHtml(neatTime) + '</strong> has been cancelled as requested.</p><p>If you\'d like to book again, you can do so on our website anytime.</p><p style="margin-top:24px;color:#999;font-size:13px;">Roni\'s Nail Studio</p></div>';
-        MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: 'Appointment cancelled: Roni\'s Nail Studio', htmlBody: clientNote });
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(15000)) {
+        return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress.</p>');
       }
-      return htmlPage('Cancelled', '<h2>Appointment cancelled</h2><p>We\'ve sent a confirmation to your email.</p>');
+      try {
+        const statusNow = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
+        if (statusNow === 'CANCELLED') {
+          return htmlPage('Cancelled', '<h2>Appointment cancelled</h2><p>We\'ve sent a confirmation to your email.</p>');
+        }
+        const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+        const ev = cal.getEventById(eventId);
+        if (ev) ev.deleteEvent();
+        sheet.getRange(rowIndex, 8).setValue('CANCELLED');
+        SpreadsheetApp.flush();
+        const neatD = formatSheetDateForEmail(dateVal);
+        const neatTime = formatSheetTimeForEmail(timeStr);
+        const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
+        const ownerBody = '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client cancelled (2-day reminder)</h2><p><strong>' + escapeHtml(clientName) + '</strong> cancelled their upcoming appointment.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' + ownerRows + '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' + escapeHtml(clientEmail || '—') + '</p></div>';
+        MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client cancelled appointment: ' + clientName, htmlBody: ownerBody });
+        if (clientEmail) {
+          const clientNote = '<div style="font-family:sans-serif;padding:32px;max-width:480px;margin:auto;"><p>Hi ' + escapeHtml(clientName) + ',</p><p>Your appointment on <strong>' + escapeHtml(neatD) + '</strong> at <strong>' + escapeHtml(neatTime) + '</strong> has been cancelled as requested.</p><p>If you\'d like to book again, you can do so on our website anytime.</p><p style="margin-top:24px;color:#999;font-size:13px;">Roni\'s Nail Studio</p></div>';
+          MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: 'Appointment cancelled: Roni\'s Nail Studio', htmlBody: clientNote });
+        }
+        return htmlPage('Cancelled', '<h2>Appointment cancelled</h2><p>We\'ve sent a confirmation to your email.</p>');
+      } finally {
+        lock.releaseLock();
+      }
     }
   }
 
