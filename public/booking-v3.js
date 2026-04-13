@@ -628,7 +628,11 @@ function bootBookingPage() {
                       ? 'Appointments must be booked at least two days in advance (not today or tomorrow). Please pick a later date.'
                       : apiMsg === 'invalid_day_or_time'
                         ? 'That day or time isn’t available. Refresh the page and choose an open slot from the calendar.'
-                        : 'Submission failed. Please try again.';
+                        : apiMsg === 'slot_unavailable'
+                          ? 'Someone just took that time. Refresh the page and pick another open slot.'
+                          : apiMsg === 'server_busy'
+                            ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
+                            : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');

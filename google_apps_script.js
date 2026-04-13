@@ -993,6 +993,12 @@ function doGet(e) {
     }
     const durMin = effectiveDurationMinutesFromEvent_(ev);
     const newEnd = new Date(start.getTime() + durMin * 60000);
+    if (slotOverlapsExistingCalendarEvents_(start, newEnd, [eventId])) {
+      return htmlPage(
+        'Error',
+        '<h2>Time no longer available</h2><p>That slot was filled before your confirmation. Please contact the studio to choose another time.</p>'
+      );
+    }
     const nEv = cal.createEvent(clientConfirmedCalendarEventTitle_(clientName), start, newEnd, { description: ev.getDescription() });
     ev.deleteEvent();
     sheet.getRange(rowIndex, 9).setValue(nEv.getId());
@@ -1256,6 +1262,13 @@ function handleOwnerProposeAlternate(d) {
   if (isNaN(testStart.getTime())) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_datetime' })).setMimeType(ContentService.MimeType.JSON);
   }
+  const calPropose = CalendarApp.getCalendarById(CALENDAR_ID);
+  const pendingEvPropose = calPropose.getEventById(d.eventId);
+  const proposeDurMin = pendingEvPropose ? effectiveDurationMinutesFromEvent_(pendingEvPropose) : 60;
+  const proposeSlotEnd = new Date(testStart.getTime() + proposeDurMin * 60000);
+  if (slotOverlapsExistingCalendarEvents_(testStart, proposeSlotEnd, [d.eventId])) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'slot_unavailable' })).setMimeType(ContentService.MimeType.JSON);
+  }
   const tz = Session.getScriptTimeZone();
   const pdate = new Date(pds + 'T12:00:00');
   const modTok = generateActionToken();
@@ -1360,6 +1373,9 @@ function handleReschedulePost(d) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_day_or_time' })).setMimeType(ContentService.MimeType.JSON);
   }
   const newEnd = new Date(start.getTime() + durMin * 60000);
+  if (slotOverlapsExistingCalendarEvents_(start, newEnd, [d.eventId])) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'slot_unavailable' })).setMimeType(ContentService.MimeType.JSON);
+  }
   ev.setTime(start, newEnd);
   ev.setTitle(clientName);
   const neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
@@ -1715,35 +1731,47 @@ function doPost(e) {
     if (!isBookingWithinStudioHours_(start, durMin)) {
       return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_day_or_time' })).setMimeType(ContentService.MimeType.JSON);
     }
-    const actionToken = generateActionToken();
-    const clientNotes = sanitizeClientNotes_(d.clientNotes);
-    const ss = getCRMSpreadsheet(); let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
-    const row = s.getLastRow() + 1;
-    s.appendRow([new Date(), d.clientName, d.phone, d.service, pubDateStr, timeTrim, d.email, 'PENDING', '', actionToken, '', '', '', '', clientNotes]);
-    SpreadsheetApp.flush();
-    const c = CalendarApp.getCalendarById(CALENDAR_ID);
-    const end = new Date(start.getTime() + durMin * 60000);
-    const desc =
-      'Phone: ' +
-      d.phone +
-      '\nEmail: ' +
-      d.email +
-      '\nService: ' +
-      d.service +
-      '\nDurationMinutes: ' +
-      durMin +
-      (clientNotes ? '\nClient notes: ' + clientNotes : '');
-    const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
-    ev.setColor(PENDING_COLOR);
-    const tz = Session.getScriptTimeZone();
-    const neatTimeEmail = Utilities.formatDate(start, tz, 'h:mm a');
-    applyBookingLocationToEvent_(ev, neatTimeEmail, d.service);
-    s.getRange(row, 9).setValue(ev.getId());
-    const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
-    const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken, clientNotes);
-    MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
-    
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(25000)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'server_busy' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    try {
+      const end = new Date(start.getTime() + durMin * 60000);
+      if (slotOverlapsExistingCalendarEvents_(start, end, [])) {
+        return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'slot_unavailable' })).setMimeType(ContentService.MimeType.JSON);
+      }
+      const actionToken = generateActionToken();
+      const clientNotes = sanitizeClientNotes_(d.clientNotes);
+      const ss = getCRMSpreadsheet();
+      let s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+      const row = s.getLastRow() + 1;
+      s.appendRow([new Date(), d.clientName, d.phone, d.service, pubDateStr, timeTrim, d.email, 'PENDING', '', actionToken, '', '', '', '', clientNotes]);
+      SpreadsheetApp.flush();
+      const c = CalendarApp.getCalendarById(CALENDAR_ID);
+      const desc =
+        'Phone: ' +
+        d.phone +
+        '\nEmail: ' +
+        d.email +
+        '\nService: ' +
+        d.service +
+        '\nDurationMinutes: ' +
+        durMin +
+        (clientNotes ? '\nClient notes: ' + clientNotes : '');
+      const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
+      ev.setColor(PENDING_COLOR);
+      const tz = Session.getScriptTimeZone();
+      const neatTimeEmail = Utilities.formatDate(start, tz, 'h:mm a');
+      applyBookingLocationToEvent_(ev, neatTimeEmail, d.service);
+      s.getRange(row, 9).setValue(ev.getId());
+      const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+      const requestHtml = getRequestEmailHtml(d.clientName, d.service, d.phone, d.email, neatDate, neatTimeEmail, ev.getId(), actionToken, clientNotes);
+      MailApp.sendEmail({ to: MY_EMAIL, subject: "New Booking Request: " + d.clientName, htmlBody: requestHtml });
+
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    } finally {
+      lock.releaseLock();
+    }
   } catch (err) {
     const msg = err && err.message ? String(err.message) : 'server_error';
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: msg })).setMimeType(ContentService.MimeType.JSON);
@@ -2141,6 +2169,51 @@ function isBookingWithinStudioHours_(start, durationMinutes) {
   const workEnd = new Date(y, mo, day, wh.end, 0, 0);
   const slotEnd = new Date(start.getTime() + dm * 60000);
   return start >= workStart && slotEnd <= workEnd;
+}
+
+/**
+ * True if [slotStart, slotEnd) overlaps any event on studio or personal calendars (same sources as public busy JSONP).
+ * @param {Date} slotStart
+ * @param {Date} slotEnd exclusive end instant
+ * @param {Array<string>=} ignoreEventIds event IDs to ignore (e.g. appointment being moved)
+ */
+function slotOverlapsExistingCalendarEvents_(slotStart, slotEnd, ignoreEventIds) {
+  const skip = Object.create(null);
+  const ids = ignoreEventIds || [];
+  for (var i = 0; i < ids.length; i++) {
+    const id = String(ids[i] == null ? '' : ids[i]).trim();
+    if (id) skip[id] = true;
+  }
+  if (!(slotStart instanceof Date) || !(slotEnd instanceof Date) || isNaN(slotStart.getTime()) || isNaN(slotEnd.getTime())) {
+    return true;
+  }
+  if (slotEnd <= slotStart) {
+    return true;
+  }
+
+  function overlapsOnCalendar(calId) {
+    const cid = String(calId == null ? '' : calId).trim();
+    if (!cid) return false;
+    try {
+      const cal = CalendarApp.getCalendarById(cid);
+      if (!cal) return false;
+      const evs = cal.getEvents(slotStart, slotEnd);
+      for (var j = 0; j < evs.length; j++) {
+        const ev = evs[j];
+        if (skip[String(ev.getId())]) continue;
+        const es = ev.getStartTime();
+        const ee = ev.getEndTime();
+        if (es < slotEnd && ee > slotStart) return true;
+      }
+    } catch (err) {
+      Logger.log('slotOverlapsExistingCalendarEvents_ ' + cid + ' ' + err);
+    }
+    return false;
+  }
+
+  if (overlapsOnCalendar(CALENDAR_ID)) return true;
+  if (overlapsOnCalendar(PERSONAL_CALENDAR_ID)) return true;
+  return false;
 }
 
 function convertTo24Hour(timeStr) {
