@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.png" type="image/png">
+    <title>Decline request | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css?v=policy-emphasis-2">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .owner-reject-page { max-width: 480px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .owner-reject-page h1 { font-family: var(--font-heading); font-weight: 400; font-size: 1.35rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; color: var(--text-main); text-align: center; }
+        .owner-reject-page .sub { font-size: 0.9rem; color: var(--text-muted); text-align: center; margin-bottom: 2rem; line-height: 1.6; }
+        .owner-reject-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.45rem; }
+        .owner-reject-page textarea { width: 100%; min-height: 120px; padding: 0.85rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 1.25rem; resize: vertical; box-sizing: border-box; }
+        .owner-reject-page textarea:focus { outline: none; border-color: var(--text-accent); }
+        .owner-reject-page .hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.75rem; margin-bottom: 1.25rem; }
+        .owner-reject-page .cute-btn { width: 100%; border: none; cursor: pointer; font-family: var(--font-body); }
+        .owner-reject-page .cute-btn.secondary { margin-top: 0.75rem; background: transparent; color: var(--text-muted); border: 1px solid rgba(178, 115, 154, 0.35); }
+        .owner-reject-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+        .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
+        .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
+    </style>
+</head>
+<body>
+    <div class="background-texture"></div>
+    <div class="background-overlay"></div>
+    <header class="hero">
+        <div class="title-wrapper">
+            <h1>Roni's Nail Studio</h1>
+        </div>
+    </header>
+    <main class="container">
+        <div class="form-section owner-reject-page">
+            <h1>Decline this request</h1>
+            <p class="sub">The calendar hold will be removed and the client will be emailed. You can add a short note below (optional)—they’ll see it in their email.</p>
+            <div id="msg" class="msg" role="status"></div>
+            <form id="reject-form">
+                <label for="decline-reason">Message to client <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+                <textarea id="decline-reason" maxlength="1500" placeholder="e.g. That day is fully booked—feel free to try another time on the site." autocomplete="off"></textarea>
+                <p class="hint">Leave blank to send the standard decline email with no extra note.</p>
+                <button type="submit" class="cute-btn" id="submit-btn" style="background:#b75e7a;">Decline &amp; notify client</button>
+            </form>
+        </div>
+    </main>
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var eventId = params.get('eventId');
+            var token = params.get('token');
+            var msg = document.getElementById('msg');
+            var form = document.getElementById('reject-form');
+            var btn = document.getElementById('submit-btn');
+
+            if (!eventId || !token) {
+                form.style.display = 'none';
+                msg.className = 'msg err';
+                msg.textContent = 'This page needs a valid link from your booking request email.';
+                msg.style.display = 'block';
+                return;
+            }
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                msg.className = 'msg';
+                msg.textContent = '';
+                msg.style.display = 'none';
+
+                btn.disabled = true;
+                var reason = document.getElementById('decline-reason').value.trim();
+                var proxy = window.location.origin + '/api/booking';
+                fetch(proxy, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ownerRejectBooking: true,
+                        eventId: eventId,
+                        ownerToken: token,
+                        declineReason: reason
+                    })
+                })
+                    .then(function (r) {
+                        return r.text().then(function (t) {
+                            var j = {};
+                            try {
+                                j = JSON.parse(String(t || '').trim().replace(/^\uFEFF/, ''));
+                            } catch (e) {
+                                j = { _parseError: true, _raw: t };
+                            }
+                            return { ok: r.ok, status: r.status, j: j };
+                        });
+                    })
+                    .then(function (x) {
+                        var s = x.j && x.j.status;
+                        if (x.ok && s === 'success') {
+                            form.style.display = 'none';
+                            msg.className = 'msg ok';
+                            msg.textContent = 'Done. The client was emailed and the request is marked declined. You can close this tab.';
+                            msg.style.display = 'block';
+                            return;
+                        }
+                        if (x.j && x.j.message === 'already_handled') {
+                            msg.className = 'msg err';
+                            msg.textContent = 'This request was already approved or declined.';
+                            msg.style.display = 'block';
+                            btn.disabled = false;
+                            return;
+                        }
+                        if (x.j && x.j.message === 'invalid_token') {
+                            msg.className = 'msg err';
+                            msg.textContent = 'This link is invalid or expired. Use the buttons from your latest booking email.';
+                            msg.style.display = 'block';
+                            btn.disabled = false;
+                            return;
+                        }
+                        var m = (x.j && x.j.message) || 'Something went wrong.';
+                        msg.className = 'msg err';
+                        msg.textContent = m;
+                        msg.style.display = 'block';
+                        btn.disabled = false;
+                    })
+                    .catch(function () {
+                        msg.className = 'msg err';
+                        msg.textContent = 'Network error. Check your connection and try again.';
+                        msg.style.display = 'block';
+                        btn.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>

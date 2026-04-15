@@ -42,7 +42,13 @@ const RESCHEDULE_PAGE_BASE = 'https://ronisnailstudio.com/reschedule.html';
 /** Owner proposes alternate time (from booking-request email). */
 const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request.html';
 
-/** Sheet: A–N as before; O = optional client notes/requests; L/M/N = proposed date, time, modificationClientToken. */
+/** Owner declines a request with an optional note (from booking-request email). */
+const OWNER_REJECT_PAGE_BASE = 'https://ronisnailstudio.com/reject-booking.html';
+
+/** Column P: optional owner decline reason (only set when status REJECTED via decline form). */
+const SHEET_COL_OWNER_DECLINE_REASON = 16;
+
+/** Sheet: A–N as before; O = client notes; L/M/N = proposed date, time, mod client token; P = owner decline reason (if any). */
 function generateActionToken() {
   return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
 }
@@ -57,6 +63,15 @@ function sanitizeClientNotes_(raw) {
   t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
   t = t.trim();
   if (t.length > 2000) t = t.substring(0, 2000);
+  return t;
+}
+
+/** Owner decline note → sheet column P + client email (trim, cap length, strip controls). */
+function sanitizeOwnerDeclineReason_(raw) {
+  let t = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  t = t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+  t = t.trim();
+  if (t.length > 1500) t = t.substring(0, 1500);
   return t;
 }
 
@@ -855,6 +870,26 @@ function doGet(e) {
     if (rowStatus !== 'PENDING' && rowStatus !== 'MOD_PROPOSED') {
       return htmlPage('Already handled', '<h2>Already handled</h2><p>This request was already approved or declined.</p>');
     }
+    if (action === 'reject') {
+      const rb = String(OWNER_REJECT_PAGE_BASE || '').trim();
+      if (rb) {
+        const sep = rb.indexOf('?') >= 0 ? '&' : '?';
+        const target =
+          rb +
+          sep +
+          'eventId=' +
+          encodeURIComponent(String(eventId)) +
+          '&token=' +
+          encodeURIComponent(String(token));
+        const html =
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Decline request</title></head><body><p>Loading…</p><script>location.replace(' +
+          JSON.stringify(target) +
+          ');</script><p style="font-family:system-ui,sans-serif;text-align:center;padding:2rem"><a href=' +
+          JSON.stringify(target) +
+          '>Continue</a></p></body></html>';
+        return ContentService.createTextOutput(html).setMimeType(ContentService.MimeType.HTML);
+      }
+    }
     if (action === 'accept') {
         if (rowStatus === 'MOD_PROPOSED') {
           return htmlPage(
@@ -904,6 +939,7 @@ function doGet(e) {
           sheet.getRange(rowIndex, 12).setValue('');
           sheet.getRange(rowIndex, 13).setValue('');
           sheet.getRange(rowIndex, 14).setValue('');
+          sheet.getRange(rowIndex, SHEET_COL_OWNER_DECLINE_REASON).setValue('');
           SpreadsheetApp.flush();
           const cal = CalendarApp.getCalendarById(CALENDAR_ID);
           const ev = cal.getEventById(eventId);
@@ -913,7 +949,7 @@ function doGet(e) {
         }
         const neatD = formatSheetDateForEmail(dateVal);
         const neatTime = formatSheetTimeForEmail(timeStr);
-        const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service);
+        const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service, '');
         if (clientEmail) {
           MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Update on your booking request: Roni's Nail Studio", htmlBody: declinedHtml });
         }
@@ -1258,6 +1294,78 @@ function doGet(e) {
     return ContentService.createTextOutput(e.parameter.callback ? e.parameter.callback + '(' + json + ')' : json).setMimeType(e.parameter.callback ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON);
   }
   return htmlPage('Bad request', '<h2>Bad request</h2>');
+}
+
+/**
+ * Owner declines from reject-booking.html: optional note to client + column P on sheet.
+ */
+function handleOwnerRejectBooking(d) {
+  const eventId = String(d.eventId || '').trim();
+  const token = String(d.ownerToken != null && d.ownerToken !== '' ? d.ownerToken : d.token || '').trim();
+  const reason = sanitizeOwnerDeclineReason_(d.declineReason);
+  if (!eventId || !token) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'missing_fields' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  let clientName = 'Client';
+  let clientEmail = '';
+  let service = '';
+  let dateVal = '';
+  let timeStr = '';
+  let rowStatus = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][8]) !== String(eventId)) continue;
+    if (!tokenMatches(data[i][9], token)) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'invalid_token' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    rowIndex = i + 1;
+    rowStatus = normalizeSheetStatus_(data[i][7]);
+    clientName = data[i][1];
+    clientEmail = data[i][6];
+    service = data[i][3];
+    dateVal = data[i][4];
+    timeStr = data[i][5];
+    break;
+  }
+  if (rowIndex < 0) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'not_found' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  if (rowStatus !== 'PENDING' && rowStatus !== 'MOD_PROPOSED') {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'already_handled' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'server_busy' })).setMimeType(ContentService.MimeType.JSON);
+  }
+  try {
+    sheet.getRange(rowIndex, 8).setValue('REJECTED');
+    sheet.getRange(rowIndex, 12).setValue('');
+    sheet.getRange(rowIndex, 13).setValue('');
+    sheet.getRange(rowIndex, 14).setValue('');
+    sheet.getRange(rowIndex, SHEET_COL_OWNER_DECLINE_REASON).setValue(reason);
+    SpreadsheetApp.flush();
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    const ev = cal.getEventById(eventId);
+    if (ev) ev.deleteEvent();
+  } finally {
+    lock.releaseLock();
+  }
+  const neatD = formatSheetDateForEmail(dateVal);
+  const neatTime = formatSheetTimeForEmail(timeStr);
+  const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service, reason);
+  if (clientEmail) {
+    MailApp.sendEmail({
+      to: clientEmail,
+      name: "Roni's Nail Studio",
+      subject: "Update on your booking request: Roni's Nail Studio",
+      htmlBody: declinedHtml,
+    });
+  }
+  SpreadsheetApp.flush();
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleOwnerProposeAlternate(d) {
@@ -1746,6 +1854,9 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.ownerProposeAlternate)) {
       return handleOwnerProposeAlternate(d);
     }
+    if (isJsonBoolTrue_(d.ownerRejectBooking)) {
+      return handleOwnerRejectBooking(d);
+    }
     if (isJsonBoolTrue_(d.reschedule)) {
       return handleReschedulePost(d);
     }
@@ -1896,13 +2007,20 @@ function getCalendarDeletedClientEmailHtml(name, date, time, service) {
   );
 }
 
-function getDeclinedEmailHtml(name, date, time, service) {
+function getDeclinedEmailHtml(name, date, time, service, declineReasonNote) {
   const n = escapeHtml(name);
   const rows = emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service);
+  const noteTrim = String(declineReasonNote == null ? '' : declineReasonNote).trim();
+  const reasonBlock = noteTrim
+    ? '<p style="font-size: 15px; color: #1a1a1a; line-height: 1.65; margin: 0 0 20px 0; padding: 16px; background: #fafafa; border-radius: 8px; border-left: 3px solid #b76e7a;"><strong>Note from the studio:</strong><br><span style="white-space:pre-wrap;">' +
+      escapeHtml(noteTrim) +
+      '</span></p>'
+    : '';
   return `
     <div style="font-family: sans-serif; padding: 40px; max-width: 500px; margin: auto; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">
       <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ${n},</p>
       <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6; margin-bottom: 20px;">Thank you for your interest in booking with Roni's Nail Studio. Unfortunately, we're unable to accommodate this request. Details below:</p>
+      ${reasonBlock}
       <table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 24px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>
         ${rows}
       </tbody></table>
@@ -2049,7 +2167,10 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
   const q = 'action=accept&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const qr = 'action=reject&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const acc = buildBookingActionUrl(q);
-  const rej = buildBookingActionUrl(qr);
+  const rejBase = String(OWNER_REJECT_PAGE_BASE || '').trim();
+  const rej = rejBase
+    ? rejBase + (rejBase.indexOf('?') >= 0 ? '&' : '?') + 'eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken)
+    : buildBookingActionUrl(qr);
   const modUrl = OWNER_MODIFY_PAGE_BASE + '?eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const notesTrim = String(clientNotes == null ? '' : clientNotes).trim();
   const notesBlock = notesTrim
