@@ -487,10 +487,11 @@ hr {
     display: flex;
     align-items: flex-start;
     gap: 1rem;
-    font-size: 0.85rem;
+    font-size: 0.92rem;
+    font-weight: 600;
     cursor: pointer;
-    color: var(--text-muted);
-    line-height: 1.5;
+    color: var(--text-main);
+    line-height: 1.55;
 }
 
 .agreement-label input {
@@ -647,10 +648,10 @@ hr {
 
 .policy-lead {
     font-family: var(--font-body);
-    font-size: 1.05rem;
-    font-weight: 400;
-    color: var(--text-muted);
-    line-height: 1.75;
+    font-size: 1.08rem;
+    font-weight: 600;
+    color: var(--text-main);
+    line-height: 1.65;
     margin: -0.5rem 0 2.5rem 0;
     max-width: 40rem;
 }
@@ -662,6 +663,19 @@ hr {
 
 #policy-modal .policy-lead:last-of-type {
     margin-bottom: 2rem;
+}
+
+#policy-modal .policy-lead.policy-intro-alert {
+    font-weight: 700;
+    background: rgba(169, 111, 146, 0.14);
+    border-left: 4px solid var(--text-accent);
+    padding: 1.1rem 1.35rem;
+    border-radius: 0 14px 14px 0;
+    max-width: none;
+}
+
+#policy-modal .policy-lead.policy-intro-standout {
+    font-weight: 600;
 }
 
 .policy-section {
@@ -685,11 +699,11 @@ hr {
 }
 
 .policy-section li {
-    font-size: 0.95rem;
-    font-weight: 300;
+    font-size: 0.98rem;
+    font-weight: 500;
     margin-bottom: 1rem;
     color: var(--text-main);
-    line-height: 1.6;
+    line-height: 1.65;
     position: relative;
     padding-left: 1.5rem;
 }
@@ -788,12 +802,33 @@ hr {
 
 .editorial-intro {
     font-family: var(--font-body);
-    font-size: 1.05rem;
-    color: var(--text-muted);
+    font-size: 1.08rem;
+    font-weight: 500;
+    color: var(--text-main);
     max-width: 700px;
     margin: 0 auto 4rem auto;
-    font-style: italic;
-    line-height: 1.8;
+    font-style: normal;
+    line-height: 1.65;
+}
+
+/* Must-read policy lines (also appears in policy modal via clone) */
+.policy-intro-alert {
+    font-weight: 700;
+    font-size: clamp(1.05rem, 2.5vw, 1.2rem);
+    line-height: 1.55;
+    color: var(--text-main);
+    text-align: left;
+    background: rgba(169, 111, 146, 0.14);
+    border-left: 4px solid var(--text-accent);
+    padding: 1.1rem 1.35rem;
+    border-radius: 0 14px 14px 0;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.04);
+}
+
+.policy-intro-standout {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-main);
 }
 
 .guidelines-section > .editorial-intro:first-of-type:not(:last-of-type) {
@@ -802,6 +837,14 @@ hr {
 
 .guidelines-section > .editorial-intro:last-of-type {
     margin-bottom: 3rem;
+}
+
+#policy-modal .policy-intro-alert {
+    margin-bottom: 1rem;
+}
+
+#policy-modal .policy-intro-standout {
+    margin-bottom: 1.75rem;
 }
 
 .guidelines-grid {
@@ -824,7 +867,8 @@ hr {
 
 .guide-item h3 {
     font-family: var(--font-heading);
-    font-size: 0.9rem;
+    font-size: 0.92rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 3px;
     color: var(--text-accent);
@@ -837,11 +881,11 @@ hr {
 }
 
 .guide-item li {
-    font-size: 0.95rem;
+    font-size: 0.98rem;
     color: var(--text-main);
     margin-bottom: 1rem;
-    line-height: 1.6;
-    font-weight: 300;
+    line-height: 1.65;
+    font-weight: 500;
     position: relative;
     padding-left: 1.5rem;
 }
