@@ -21,6 +21,8 @@ function clientConfirmedCalendarEventTitle_(clientName) {
 }
 
 const MY_EMAIL = 'ronisnailstudio@gmail.com';
+/** Same subject clients see in their inbox for the 2-day confirm email (use in previews too). */
+const TWO_DAY_REMINDER_EMAIL_SUBJECT = "Please confirm your appointment — action needed — Roni's Nail Studio";
 const SPREADSHEET_ID = '16IJ_aJlAXWrF6UpM_g4Oia8rGGyAcmeR898STRX_5tc'; 
 /**
  * Web app URL — must be the /exec deployment (not /dev; /dev requires developer login).
@@ -2109,7 +2111,7 @@ function sendTwoDayReminders() {
     MailApp.sendEmail({
       to: clientEmail,
       name: "Roni's Nail Studio",
-      subject: "Please confirm your appointment — action needed — Roni's Nail Studio",
+      subject: TWO_DAY_REMINDER_EMAIL_SUBJECT,
       htmlBody: html,
     });
     sheet.getRange(i + 1, 11).setValue('SENT');
@@ -2206,6 +2208,7 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
 
 /**
  * Layout only: Confirm / Cancel / Reschedule links use fake IDs (clicks will show invalid/not found).
+ * Uses the same subject line and “from” display name as the real client email (see TWO_DAY_REMINDER_EMAIL_SUBJECT).
  */
 function testTwoDayReminderPreview() {
   const html = getTwoDayReminderEmailHtml(
@@ -2218,12 +2221,13 @@ function testTwoDayReminderPreview() {
   );
   MailApp.sendEmail({
     to: MY_EMAIL,
-    subject: "PREVIEW: please confirm email (dummy links — safe to click)",
+    name: "Roni's Nail Studio",
+    subject: TWO_DAY_REMINDER_EMAIL_SUBJECT,
     htmlBody:
-      '<p style="font-family:sans-serif;font-size:13px;color:#666;">Dummy links only. Use <strong>testTwoDayReminderLiveToStudio</strong> to test working buttons on a real booking.</p>' +
-      html,
+      html +
+      '<p style="font-size:11px;color:#b0b0b0;text-align:center;margin-top:28px;line-height:1.5;">Preview to your studio inbox — button links are placeholders (safe to click). For real links, run <strong>testTwoDayReminderLiveToStudio</strong>.</p>',
   });
-  Logger.log('Sent 2-day reminder PREVIEW to ' + MY_EMAIL);
+  Logger.log('Sent 2-day reminder PREVIEW to ' + MY_EMAIL + ' (same subject line as clients)');
 }
 
 /**
@@ -2248,9 +2252,9 @@ function testTwoDayReminderLiveToStudio() {
     MailApp.sendEmail({
       to: MY_EMAIL,
       name: "Roni's Nail Studio",
-      subject: 'TEST (live links): confirm email — ' + clientName + ' — Cancel will cancel for real',
+      subject: TWO_DAY_REMINDER_EMAIL_SUBJECT,
       htmlBody:
-        '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;"><strong>Test email.</strong> Sent to studio only. Buttons use real booking data — <strong>Cancel</strong> will cancel this appointment.</p>' +
+        '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;"><strong>Test only — sent to studio inbox.</strong> Subject line matches what clients see. Buttons use real data: <strong>Cancel</strong> cancels this appointment.</p>' +
         html,
     });
     Logger.log('Sent LIVE test 2-day reminder for sheet row ' + (i + 1) + ' to ' + MY_EMAIL);
@@ -2289,8 +2293,11 @@ function testEmailPreview() {
   const twoDayHtml = getTwoDayReminderEmailHtml(mockName, mockDate, mockTime, mockService, "PREVIEW_NO_REAL_EVENT", "preview_invalid_token");
   MailApp.sendEmail({
     to: MY_EMAIL,
-    subject: "PREVIEW: please confirm appointment (dummy links)",
-    htmlBody: twoDayHtml,
+    name: "Roni's Nail Studio",
+    subject: TWO_DAY_REMINDER_EMAIL_SUBJECT,
+    htmlBody:
+      twoDayHtml +
+      '<p style="font-size:11px;color:#b0b0b0;text-align:center;margin-top:28px;">Preview — dummy links only.</p>',
   });
 
   Logger.log("Sent 3 preview emails to: " + MY_EMAIL);
