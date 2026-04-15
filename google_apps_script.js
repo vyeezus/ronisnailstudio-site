@@ -2049,14 +2049,15 @@ function getTwoDayReminderEmailHtml(name, date, time, service, eventId, token) {
     : '<p style="font-size:14px;color:#666;">To reschedule, visit our website and book a new appointment time.</p>';
   return `
     <div style="font-family: sans-serif; padding: 32px; max-width: 450px; margin: auto; border: 1px solid #eaeaea; border-radius: 12px;">
-      <h2 style="color: #111; font-weight: 500; font-size: 20px; text-align: center;">Appointment in 2 days</h2>
+      <h2 style="color: #111; font-weight: 600; font-size: 20px; text-align: center; line-height: 1.35;">Please confirm your appointment</h2>
+      <p style="font-size: 14px; color: #555; text-align: center; margin: 8px 0 20px 0;">Your visit is in <strong>2 days</strong> — we need you to take a moment and tap a button below.</p>
       <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ${n},</p>
-      <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">This is a friendly reminder about your upcoming visit. Please confirm, reschedule, or cancel below.</p>
+      <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;"><strong>Please tap &ldquo;Confirm I&rsquo;m coming&rdquo;</strong> so we know you&rsquo;re still planning to be here. If you can&rsquo;t make it, use <strong>Reschedule</strong> or <strong>Cancel</strong> instead.</p>
       <table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>
         ${emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service)}
       </tbody></table>
       <div style="text-align: center;">
-        <a href="${urlConfirm}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 500; display: block; margin-bottom: 12px;">Confirm</a>
+        <a href="${urlConfirm}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 600; display: block; margin-bottom: 12px;">Confirm I&rsquo;m coming</a>
         ${rescheduleBlock}
         <a href="${urlCancel}" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; padding: 12px; text-decoration: none; border-radius: 8px; display: block;">Cancel</a>
       </div>
@@ -2108,7 +2109,7 @@ function sendTwoDayReminders() {
     MailApp.sendEmail({
       to: clientEmail,
       name: "Roni's Nail Studio",
-      subject: "Reminder: your appointment in 2 days — Roni's Nail Studio",
+      subject: "Please confirm your appointment — action needed — Roni's Nail Studio",
       htmlBody: html,
     });
     sheet.getRange(i + 1, 11).setValue('SENT');
@@ -2217,7 +2218,7 @@ function testTwoDayReminderPreview() {
   );
   MailApp.sendEmail({
     to: MY_EMAIL,
-    subject: "PREVIEW: 2-day reminder (links are dummy — safe to click)",
+    subject: "PREVIEW: please confirm email (dummy links — safe to click)",
     htmlBody:
       '<p style="font-family:sans-serif;font-size:13px;color:#666;">Dummy links only. Use <strong>testTwoDayReminderLiveToStudio</strong> to test working buttons on a real booking.</p>' +
       html,
@@ -2247,7 +2248,7 @@ function testTwoDayReminderLiveToStudio() {
     MailApp.sendEmail({
       to: MY_EMAIL,
       name: "Roni's Nail Studio",
-      subject: 'TEST (live links): 2-day reminder — ' + clientName + ' — Cancel will cancel for real',
+      subject: 'TEST (live links): confirm email — ' + clientName + ' — Cancel will cancel for real',
       htmlBody:
         '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;"><strong>Test email.</strong> Sent to studio only. Buttons use real booking data — <strong>Cancel</strong> will cancel this appointment.</p>' +
         html,
@@ -2288,7 +2289,7 @@ function testEmailPreview() {
   const twoDayHtml = getTwoDayReminderEmailHtml(mockName, mockDate, mockTime, mockService, "PREVIEW_NO_REAL_EVENT", "preview_invalid_token");
   MailApp.sendEmail({
     to: MY_EMAIL,
-    subject: "PREVIEW: 2-day reminder (dummy links)",
+    subject: "PREVIEW: please confirm appointment (dummy links)",
     htmlBody: twoDayHtml,
   });
 
