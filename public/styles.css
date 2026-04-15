@@ -487,11 +487,10 @@ hr {
     display: flex;
     align-items: flex-start;
     gap: 1rem;
-    font-size: 0.92rem;
-    font-weight: 600;
+    font-size: 0.85rem;
     cursor: pointer;
-    color: var(--text-main);
-    line-height: 1.55;
+    color: var(--text-muted);
+    line-height: 1.5;
 }
 
 .agreement-label input {
@@ -648,10 +647,10 @@ hr {
 
 .policy-lead {
     font-family: var(--font-body);
-    font-size: 1.08rem;
-    font-weight: 600;
-    color: var(--text-main);
-    line-height: 1.65;
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.75;
     margin: -0.5rem 0 2.5rem 0;
     max-width: 40rem;
 }
@@ -667,15 +666,25 @@ hr {
 
 #policy-modal .policy-lead.policy-intro-alert {
     font-weight: 700;
+    font-style: normal;
+    font-size: clamp(1.05rem, 2.5vw, 1.2rem);
+    color: var(--text-main);
+    line-height: 1.55;
+    text-align: left;
     background: rgba(169, 111, 146, 0.14);
     border-left: 4px solid var(--text-accent);
     padding: 1.1rem 1.35rem;
     border-radius: 0 14px 14px 0;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.04);
     max-width: none;
 }
 
 #policy-modal .policy-lead.policy-intro-standout {
     font-weight: 600;
+    font-style: normal;
+    font-size: 1.1rem;
+    color: var(--text-main);
+    line-height: 1.65;
 }
 
 .policy-section {
@@ -699,11 +708,11 @@ hr {
 }
 
 .policy-section li {
-    font-size: 0.98rem;
-    font-weight: 500;
+    font-size: 0.95rem;
+    font-weight: 300;
     margin-bottom: 1rem;
     color: var(--text-main);
-    line-height: 1.65;
+    line-height: 1.6;
     position: relative;
     padding-left: 1.5rem;
 }
@@ -800,20 +809,21 @@ hr {
     letter-spacing: -1px;
 }
 
+/* Default for intros without .policy-intro-* (intro lines use alert/standout below) */
 .editorial-intro {
     font-family: var(--font-body);
-    font-size: 1.08rem;
-    font-weight: 500;
-    color: var(--text-main);
+    font-size: 1.05rem;
+    color: var(--text-muted);
     max-width: 700px;
     margin: 0 auto 4rem auto;
-    font-style: normal;
-    line-height: 1.65;
+    font-style: italic;
+    line-height: 1.8;
 }
 
 /* Must-read policy lines (also appears in policy modal via clone) */
 .policy-intro-alert {
     font-weight: 700;
+    font-style: normal;
     font-size: clamp(1.05rem, 2.5vw, 1.2rem);
     line-height: 1.55;
     color: var(--text-main);
@@ -827,6 +837,7 @@ hr {
 
 .policy-intro-standout {
     font-weight: 600;
+    font-style: normal;
     font-size: 1.1rem;
     color: var(--text-main);
 }
@@ -867,8 +878,7 @@ hr {
 
 .guide-item h3 {
     font-family: var(--font-heading);
-    font-size: 0.92rem;
-    font-weight: 600;
+    font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 3px;
     color: var(--text-accent);
@@ -881,11 +891,11 @@ hr {
 }
 
 .guide-item li {
-    font-size: 0.98rem;
+    font-size: 0.95rem;
     color: var(--text-main);
     margin-bottom: 1rem;
-    line-height: 1.65;
-    font-weight: 500;
+    line-height: 1.6;
+    font-weight: 300;
     position: relative;
     padding-left: 1.5rem;
 }
