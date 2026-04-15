@@ -368,9 +368,10 @@ function getActiveBookingEvent_(calendar, eventId) {
  * onEventUpdated reliably on group calendars. (3) One deployment only (Head or version, not both).
  * Optional: Editor → Services → add “Google Calendar API” so deleted/cancelled events are detected reliably.
  *
- * Race guard: this function snapshots the sheet once at START. If the owner clicks Approve (doGet accept)
- * while a sync is running, the old PENDING event id is deleted and a new id is written — the sync must
- * re-read status + event id before marking CANCELLED or it can overwrite CONFIRMED with CANCELLED.
+ * Race guard: snapshots sheet rows at START; re-reads status + event id before cancelling. Approve must
+ * write the new calendar id + CONFIRMED and flush before deleting the old PENDING event, and use the
+ * same script lock as this sync — otherwise a sync can see “event gone” while the row is still PENDING
+ * and send a false “Appointment Cancelled” email to the client.
  */
 function syncCalendarToSpreadsheet() {
   const lock = LockService.getScriptLock();
@@ -861,20 +862,31 @@ function doGet(e) {
             '<h2>Alternate time pending</h2><p>You already suggested a different time. Wait for the client to confirm it, or use <strong>Decline</strong> to cancel this request.</p>'
           );
         }
-        const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-        const ev = cal.getEventById(eventId);
-        if (ev) {
-          const nEv = cal.createEvent(clientName, ev.getStartTime(), ev.getEndTime(), { description: ev.getDescription() });
-          applyBookingLocationToEvent_(
-            nEv,
-            Utilities.formatDate(nEv.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
-            service
-          );
-          ev.deleteEvent();
-          sheet.getRange(rowIndex, 9).setValue(nEv.getId());
+        const lock = LockService.getScriptLock();
+        if (!lock.tryLock(20000)) {
+          return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress. Wait a moment and tap Approve again.</p>');
         }
-        sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
-        
+        try {
+          const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+          const ev = cal.getEventById(eventId);
+          if (ev) {
+            const nEv = cal.createEvent(clientName, ev.getStartTime(), ev.getEndTime(), { description: ev.getDescription() });
+            applyBookingLocationToEvent_(
+              nEv,
+              Utilities.formatDate(nEv.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
+              service
+            );
+            sheet.getRange(rowIndex, 9).setValue(nEv.getId());
+            sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
+            SpreadsheetApp.flush();
+            ev.deleteEvent();
+          } else {
+            sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
+            SpreadsheetApp.flush();
+          }
+        } finally {
+          lock.releaseLock();
+        }
         const neatD = formatSheetDateForEmail(dateVal);
         const neatTime = formatSheetTimeForEmail(timeStr);
         const acceptEmailHtml = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
@@ -883,19 +895,30 @@ function doGet(e) {
         return htmlPage('Accepted', '<h2>Request accepted</h2><p>The client has been notified.</p>');
     }
     if (action === 'reject') {
-       const cal = CalendarApp.getCalendarById(CALENDAR_ID); const ev = cal.getEventById(eventId); if (ev) ev.deleteEvent();
-       sheet.getRange(rowIndex, 8).setValue('REJECTED');
-       sheet.getRange(rowIndex, 12).setValue('');
-       sheet.getRange(rowIndex, 13).setValue('');
-       sheet.getRange(rowIndex, 14).setValue('');
-       const neatD = formatSheetDateForEmail(dateVal);
-       const neatTime = formatSheetTimeForEmail(timeStr);
-       const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service);
-       if (clientEmail) {
-         MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Update on your booking request: Roni's Nail Studio", htmlBody: declinedHtml });
-       }
-       SpreadsheetApp.flush();
-       return htmlPage('Declined', '<h2>Request declined</h2><p>The client has been notified.</p>');
+        const lock = LockService.getScriptLock();
+        if (!lock.tryLock(20000)) {
+          return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress. Wait a moment and try again.</p>');
+        }
+        try {
+          sheet.getRange(rowIndex, 8).setValue('REJECTED');
+          sheet.getRange(rowIndex, 12).setValue('');
+          sheet.getRange(rowIndex, 13).setValue('');
+          sheet.getRange(rowIndex, 14).setValue('');
+          SpreadsheetApp.flush();
+          const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+          const ev = cal.getEventById(eventId);
+          if (ev) ev.deleteEvent();
+        } finally {
+          lock.releaseLock();
+        }
+        const neatD = formatSheetDateForEmail(dateVal);
+        const neatTime = formatSheetTimeForEmail(timeStr);
+        const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service);
+        if (clientEmail) {
+          MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Update on your booking request: Roni's Nail Studio", htmlBody: declinedHtml });
+        }
+        SpreadsheetApp.flush();
+        return htmlPage('Declined', '<h2>Request declined</h2><p>The client has been notified.</p>');
     }
     return htmlPage('Not supported', '<h2>Unsupported action</h2>');
   }
@@ -949,14 +972,22 @@ function doGet(e) {
       return htmlPage('Error', '<h2>Invalid date</h2><p>Please contact the studio.</p>');
     }
     if (action === 'client_decline_mod') {
-      const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-      const ev = cal.getEventById(eventId);
-      if (ev) ev.deleteEvent();
-      sheet.getRange(rowIndex, 8).setValue('MOD_DECLINED');
-      sheet.getRange(rowIndex, 12).setValue('');
-      sheet.getRange(rowIndex, 13).setValue('');
-      sheet.getRange(rowIndex, 14).setValue('');
-      SpreadsheetApp.flush();
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(20000)) {
+        return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress.</p>');
+      }
+      try {
+        sheet.getRange(rowIndex, 8).setValue('MOD_DECLINED');
+        sheet.getRange(rowIndex, 12).setValue('');
+        sheet.getRange(rowIndex, 13).setValue('');
+        sheet.getRange(rowIndex, 14).setValue('');
+        SpreadsheetApp.flush();
+        const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+        const ev = cal.getEventById(eventId);
+        if (ev) ev.deleteEvent();
+      } finally {
+        lock.releaseLock();
+      }
       const neatD = formatSheetDateForEmail(dateVal);
       const neatTime = formatSheetTimeForEmail(timeStr);
       if (clientEmail) {
@@ -999,18 +1030,27 @@ function doGet(e) {
         '<h2>Time no longer available</h2><p>That slot was filled before your confirmation. Please contact the studio to choose another time.</p>'
       );
     }
-    const nEv = cal.createEvent(clientConfirmedCalendarEventTitle_(clientName), start, newEnd, { description: ev.getDescription() });
-    ev.deleteEvent();
-    sheet.getRange(rowIndex, 9).setValue(nEv.getId());
-    sheet.getRange(rowIndex, 5).setValue(start);
     const neatTimeDisplay = Utilities.formatDate(start, tz, 'h:mm a');
-    sheet.getRange(rowIndex, 6).setValue(neatTimeDisplay);
+    const nEv = cal.createEvent(clientConfirmedCalendarEventTitle_(clientName), start, newEnd, { description: ev.getDescription() });
     applyBookingLocationToEvent_(nEv, neatTimeDisplay, service);
-    sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
-    sheet.getRange(rowIndex, 12).setValue('');
-    sheet.getRange(rowIndex, 13).setValue('');
-    sheet.getRange(rowIndex, 14).setValue('');
-    SpreadsheetApp.flush();
+    const lockAlt = LockService.getScriptLock();
+    if (!lockAlt.tryLock(20000)) {
+      nEv.deleteEvent();
+      return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress.</p>');
+    }
+    try {
+      sheet.getRange(rowIndex, 9).setValue(nEv.getId());
+      sheet.getRange(rowIndex, 5).setValue(start);
+      sheet.getRange(rowIndex, 6).setValue(neatTimeDisplay);
+      sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
+      sheet.getRange(rowIndex, 12).setValue('');
+      sheet.getRange(rowIndex, 13).setValue('');
+      sheet.getRange(rowIndex, 14).setValue('');
+      SpreadsheetApp.flush();
+      ev.deleteEvent();
+    } finally {
+      lockAlt.releaseLock();
+    }
     const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
     const acceptHtml = getConfirmedEmailHtml(clientName, neatDate, neatTimeDisplay, service);
     if (clientEmail) {
