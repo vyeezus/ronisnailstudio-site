@@ -2052,14 +2052,14 @@ function getTwoDayReminderEmailHtml(name, date, time, service, eventId, token) {
   return `
     <div style="font-family: sans-serif; padding: 32px; max-width: 450px; margin: auto; border: 1px solid #eaeaea; border-radius: 12px;">
       <h2 style="color: #111; font-weight: 600; font-size: 20px; text-align: center; line-height: 1.35;">Please confirm your appointment</h2>
-      <p style="font-size: 14px; color: #555; text-align: center; margin: 8px 0 20px 0;">Your visit is in <strong>2 days</strong> — we need you to take a moment and tap a button below.</p>
+      <p style="font-size: 14px; color: #555; text-align: center; margin: 8px 0 20px 0;">Your visit is in 2 days -- please let us know of any changes.</p>
       <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Hi ${n},</p>
-      <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;"><strong>Please tap &ldquo;Confirm I&rsquo;m coming&rdquo;</strong> so we know you&rsquo;re still planning to be here. If you can&rsquo;t make it, use <strong>Reschedule</strong> or <strong>Cancel</strong> instead.</p>
+      <p style="font-size: 16px; color: #1a1a1a; line-height: 1.6;">Please tap <strong>Confirm</strong> if you&rsquo;re all set. If you need to change plans, use <strong>Reschedule</strong> or <strong>Cancel</strong>.</p>
       <table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>
         ${emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service)}
       </tbody></table>
       <div style="text-align: center;">
-        <a href="${urlConfirm}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 600; display: block; margin-bottom: 12px;">Confirm I&rsquo;m coming</a>
+        <a href="${urlConfirm}" style="background-color: #111; color: white; padding: 14px; text-decoration: none; border-radius: 8px; font-weight: 600; display: block; margin-bottom: 12px;">Confirm</a>
         ${rescheduleBlock}
         <a href="${urlCancel}" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; padding: 12px; text-decoration: none; border-radius: 8px; display: block;">Cancel</a>
       </div>
