@@ -22,7 +22,7 @@ function clientConfirmedCalendarEventTitle_(clientName) {
 
 const MY_EMAIL = 'ronisnailstudio@gmail.com';
 /** Same subject clients see in their inbox for the 2-day confirm email (use in previews too). */
-const TWO_DAY_REMINDER_EMAIL_SUBJECT = "Please confirm your appointment — action needed — Roni's Nail Studio";
+const TWO_DAY_REMINDER_EMAIL_SUBJECT = "Please confirm your appointment — Roni's Nail Studio";
 const SPREADSHEET_ID = '16IJ_aJlAXWrF6UpM_g4Oia8rGGyAcmeR898STRX_5tc'; 
 /**
  * Web app URL — must be the /exec deployment (not /dev; /dev requires developer login).
