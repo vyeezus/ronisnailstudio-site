@@ -1610,21 +1610,6 @@ function handleOwnerClientLookup(d) {
 }
 
 /**
- * Calendar title for admin-created appointments so week/month view shows service + duration, not only the name.
- */
-function adminDirectBookingCalendarTitle_(clientName, serviceBlob, durationMinutes) {
-  const n = String(clientName == null ? '' : clientName).trim() || 'Client';
-  const base = humanizeCalendarServiceWords_(baseServiceLabelForCalendar_(serviceBlob));
-  const dm = Number(durationMinutes);
-  const durPart = isFinite(dm) && dm > 0 ? ' · ' + String(Math.round(dm)) + ' min' : '';
-  var t = n;
-  if (base) t = t + ' — ' + base;
-  t = t + durPart;
-  if (t.length > 140) t = t.substring(0, 137) + '…';
-  return t;
-}
-
-/**
  * Admin page: append CONFIRMED row, create calendar event (not PENDING), send client confirmation + owner note.
  */
 function handleOwnerDirectBooking(d) {
@@ -1656,7 +1641,6 @@ function handleOwnerDirectBooking(d) {
   const row = s.getLastRow() + 1;
   s.appendRow([new Date(), clientName, phone, service, start, timeStr, email, 'CONFIRMED', '', actionToken, '', '', '', '', '']);
   const c = CalendarApp.getCalendarById(CALENDAR_ID);
-  const evTitle = adminDirectBookingCalendarTitle_(clientName, service, durMin);
   const desc =
     'Client: ' +
     clientName +
@@ -1673,7 +1657,7 @@ function handleOwnerDirectBooking(d) {
     '\n(Google Calendar may list the Google account that runs this script as the creator; that is normal for studio automation.)' +
     '\nDurationMinutes: ' +
     durMin;
-  const ev = c.createEvent(evTitle, start, end, { description: desc });
+  const ev = c.createEvent(clientName, start, end, { description: desc });
   if (ev && typeof ev.setDescription === 'function') {
     ev.setDescription(desc);
   }
