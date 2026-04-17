@@ -106,11 +106,21 @@ function formatSheetTimeForEmail(value) {
 }
 
 /**
+ * Normalize bullets / pipes so tier + base split the same as the admin page middle dot (·).
+ */
+function normalizeBulletSeparators_(serviceBlob) {
+  return String(serviceBlob == null ? '' : serviceBlob)
+    .replace(/\u2022/g, '\u00B7')
+    .replace(/\r\n/g, '\n')
+    .replace(/\s*\|\s*/g, ' \u00B7 ');
+}
+
+/**
  * Service text is comma-separated (public booking) or middle-dot-separated (admin page).
  * Calendar "location" shows start time + base service only (no design tier, no foreign soak-off add-on).
  */
 function splitServiceSegments_(serviceBlob) {
-  const s = String(serviceBlob == null ? '' : serviceBlob).trim();
+  const s = normalizeBulletSeparators_(serviceBlob).trim();
   if (!s) return [];
   return s
     .split(/\s*[,，]\s*|\s*·\s*/)
@@ -181,8 +191,28 @@ function calendarLocationFromTimeAndService_(timeDisplay, serviceBlob) {
 
 function applyBookingLocationToEvent_(ev, timeDisplay, serviceBlob) {
   if (!ev || typeof ev.setLocation !== 'function') return;
-  const loc = calendarLocationFromTimeAndService_(timeDisplay, serviceBlob);
-  if (loc) ev.setLocation(loc);
+  const svcNorm = normalizeBulletSeparators_(serviceBlob);
+  let loc = calendarLocationFromTimeAndService_(timeDisplay, svcNorm);
+  const t = String(timeDisplay == null ? '' : timeDisplay).trim();
+  const raw = String(svcNorm || '').trim();
+  if (!loc) {
+    if (t && raw) loc = t + ' ' + raw.substring(0, 140);
+    else if (raw) loc = raw.substring(0, 200);
+    else if (t) loc = t;
+  }
+  if (loc) ev.setLocation(String(loc).substring(0, 200));
+  if (typeof ev.getLocation === 'function' && raw) {
+    const check = String(ev.getLocation() || '').trim();
+    if (!check || /^studio$/i.test(check)) {
+      let rescue = calendarLocationFromTimeAndService_(t, svcNorm);
+      if (!rescue || /^studio$/i.test(String(rescue).trim())) {
+        rescue = (t ? t + ' ' : '') + raw.substring(0, 140);
+      }
+      if (String(rescue).trim() && !/^studio$/i.test(String(rescue).trim())) {
+        ev.setLocation(String(rescue).trim().substring(0, 200));
+      }
+    }
+  }
 }
 
 function emailDetailRow(label, value) {
