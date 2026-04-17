@@ -104,6 +104,7 @@
         .admin-book-page .input-date-wrap { margin-bottom: 0.9rem; max-width: 100%; }
         .admin-book-page .input-date-wrap input[type="date"] { margin-bottom: 0; }
         .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+        .btn-row + .msg { margin-top: 0.75rem; margin-bottom: 0; }
         .msg.err { display: block; background: rgba(183, 94, 122, 0.1); color: #8b3a52; border: 1px solid rgba(183, 94, 122, 0.25); }
         .msg.ok { display: block; background: rgba(100, 140, 100, 0.12); color: #2d5a2d; border: 1px solid rgba(100, 140, 100, 0.25); }
         .lookup-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -0.5rem; margin-bottom: 0.75rem; }
@@ -779,7 +780,6 @@
                 </div>
             </aside>
             <div class="admin-book-form">
-            <div id="msg" class="msg" role="status"></div>
             <div class="secret-block">
                 <label for="admin-secret">Admin secret</label>
                 <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
@@ -924,6 +924,7 @@
             <div class="btn-row">
                 <button type="button" class="cute-btn" id="btn-submit">Create booking &amp; send email</button>
             </div>
+            <div id="msg" class="msg" role="status"></div>
             </div>
             </div>
         </div>
@@ -1708,6 +1709,13 @@
             function setMsg(ok, text) {
                 msg.className = 'msg ' + (ok ? 'ok' : 'err');
                 msg.textContent = text;
+                if (text && ok) {
+                    requestAnimationFrame(function () {
+                        try {
+                            msg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        } catch (e) { /* ignore */ }
+                    });
+                }
             }
 
             function escapeHtml(s) {
