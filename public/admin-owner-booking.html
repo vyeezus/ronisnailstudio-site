@@ -964,18 +964,41 @@
                 return !!(base || (fo && fo.checked));
             }
 
+            /** Labels for service string if DOM labels are not found (must match visible option titles). */
+            var ADMIN_BASE_LABELS = {
+                'sg-new': 'Structured Gel New Set',
+                'sg-refill': 'Structured Gel Refill',
+                'sg-removal-new': 'Structured Gel Removal + New Set',
+                'gx-short': 'Gel X Short',
+                'gx-medium': 'Gel X Medium',
+                'gx-long': 'Gel X Long',
+            };
+            var ADMIN_TIER_LABELS = {
+                none: '',
+                tier1: 'Tier 1: Simple Art',
+                tier2: 'Tier 2: Moderate Art',
+                tier3: 'Tier 3: Advanced Art',
+                tier4: 'Tier 4: Extreme Art',
+            };
+
             function buildAdminServiceDescription() {
                 if (!adminServiceRoot) return '';
                 var parts = [];
                 var selectedBase = adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
                 if (selectedBase) {
-                    var h3 = selectedBase.nextElementSibling && selectedBase.nextElementSibling.querySelector('h3');
-                    if (h3) parts.push(h3.innerText.trim());
+                    var lab = selectedBase.closest ? selectedBase.closest('label') : null;
+                    var h3 = lab && lab.querySelector('.row-info h3');
+                    var labelText = h3 && (h3.textContent || h3.innerText) ? String(h3.textContent || h3.innerText).trim() : '';
+                    if (!labelText && ADMIN_BASE_LABELS[selectedBase.value]) labelText = ADMIN_BASE_LABELS[selectedBase.value];
+                    if (labelText) parts.push(labelText);
                 }
                 var selectedTier = adminServiceRoot.querySelector('input[name="admin-design-tier"]:checked');
                 if (selectedTier && selectedTier.value !== 'none') {
-                    var th3 = selectedTier.nextElementSibling && selectedTier.nextElementSibling.querySelector('h3');
-                    if (th3) parts.push(th3.innerText.trim());
+                    var tlab = selectedTier.closest ? selectedTier.closest('label') : null;
+                    var th3 = tlab && tlab.querySelector('.row-info h3');
+                    var ttext = th3 && (th3.textContent || th3.innerText) ? String(th3.textContent || th3.innerText).trim() : '';
+                    if (!ttext && ADMIN_TIER_LABELS[selectedTier.value]) ttext = ADMIN_TIER_LABELS[selectedTier.value];
+                    if (ttext) parts.push(ttext);
                 }
                 var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                 if (foreignCb && foreignCb.checked) {
