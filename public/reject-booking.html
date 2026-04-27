@@ -53,6 +53,23 @@
             var form = document.getElementById('reject-form');
             var btn = document.getElementById('submit-btn');
 
+            function friendlyRejectError(code) {
+                var c = String(code || '').trim();
+                if (c === 'server_busy') {
+                    return 'The booking system is handling another update right now. Wait a few seconds, then tap Decline again.';
+                }
+                if (c === 'not_found') {
+                    return 'We could not find this request—it may already be removed or the link is outdated.';
+                }
+                if (c === 'missing_fields') {
+                    return 'This page is incomplete. Open Decline from your latest booking email.';
+                }
+                if (c && /^[a-z0-9_]+$/.test(c) && c.length < 48) {
+                    return 'Something went wrong. Please try again in a moment.';
+                }
+                return c || 'Something went wrong.';
+            }
+
             if (!eventId || !token) {
                 form.style.display = 'none';
                 msg.className = 'msg err';
@@ -114,7 +131,7 @@
                             btn.disabled = false;
                             return;
                         }
-                        var m = (x.j && x.j.message) || 'Something went wrong.';
+                        var m = friendlyRejectError((x.j && x.j.message) || '');
                         msg.className = 'msg err';
                         msg.textContent = m;
                         msg.style.display = 'block';
