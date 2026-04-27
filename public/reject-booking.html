@@ -56,7 +56,7 @@
             function friendlyRejectError(code) {
                 var c = String(code || '').trim();
                 if (c === 'server_busy') {
-                    return 'The booking system is handling another update right now. Wait a few seconds, then tap Decline again.';
+                    return 'The booking system is busy (usually calendar sync). Wait a minute and tap Decline again, or leave this page open—we retry automatically a few times.';
                 }
                 if (c === 'not_found') {
                     return 'We could not find this request—it may already be removed or the link is outdated.';
@@ -78,13 +78,8 @@
                 return;
             }
 
-            form.addEventListener('submit', function (e) {
-                e.preventDefault();
-                msg.className = 'msg';
-                msg.textContent = '';
-                msg.style.display = 'none';
-
-                btn.disabled = true;
+            function submitOwnerReject(attempt) {
+                var n = typeof attempt === 'number' ? attempt : 0;
                 var reason = document.getElementById('decline-reason').value.trim();
                 var proxy = window.location.origin + '/api/booking';
                 fetch(proxy, {
@@ -102,7 +97,7 @@
                             var j = {};
                             try {
                                 j = JSON.parse(String(t || '').trim().replace(/^\uFEFF/, ''));
-                            } catch (e) {
+                            } catch (e2) {
                                 j = { _parseError: true, _raw: t };
                             }
                             return { ok: r.ok, status: r.status, j: j };
@@ -115,6 +110,18 @@
                             msg.className = 'msg ok';
                             msg.textContent = 'Done. The client was emailed and the request is marked declined. You can close this tab.';
                             msg.style.display = 'block';
+                            return;
+                        }
+                        if (x.j && x.j.message === 'server_busy' && n < 5) {
+                            msg.className = 'msg err';
+                            msg.textContent =
+                                'Calendar sync or another update has the system locked. Retrying automatically in 8 seconds… (attempt ' +
+                                (n + 1) +
+                                ' of 6)';
+                            msg.style.display = 'block';
+                            window.setTimeout(function () {
+                                submitOwnerReject(n + 1);
+                            }, 8000);
                             return;
                         }
                         if (x.j && x.j.message === 'already_handled') {
@@ -143,6 +150,15 @@
                         msg.style.display = 'block';
                         btn.disabled = false;
                     });
+            }
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                msg.className = 'msg';
+                msg.textContent = '';
+                msg.style.display = 'none';
+                btn.disabled = true;
+                submitOwnerReject(0);
             });
         })();
     </script>

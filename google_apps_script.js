@@ -930,7 +930,7 @@ function doGet(e) {
           );
         }
         const lock = LockService.getScriptLock();
-        if (!lock.tryLock(20000)) {
+        if (!lock.tryLock(120000)) {
           return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress. Wait a moment and tap Approve again.</p>');
         }
         try {
@@ -963,7 +963,7 @@ function doGet(e) {
     }
     if (action === 'reject') {
         const lock = LockService.getScriptLock();
-        if (!lock.tryLock(20000)) {
+        if (!lock.tryLock(120000)) {
           return htmlPage('Busy', '<h2>Please try again</h2><p>Another update is in progress. Wait a moment and try again.</p>');
         }
         try {
@@ -973,12 +973,12 @@ function doGet(e) {
           sheet.getRange(rowIndex, 14).setValue('');
           sheet.getRange(rowIndex, SHEET_COL_OWNER_DECLINE_REASON).setValue('');
           SpreadsheetApp.flush();
-          const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-          const ev = cal.getEventById(eventId);
-          if (ev) ev.deleteEvent();
         } finally {
           lock.releaseLock();
         }
+        const calReject = CalendarApp.getCalendarById(CALENDAR_ID);
+        const evReject = calReject.getEventById(eventId);
+        if (evReject) evReject.deleteEvent();
         const neatD = formatSheetDateForEmail(dateVal);
         const neatTime = formatSheetTimeForEmail(timeStr);
         const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service, '');
@@ -1368,23 +1368,29 @@ function handleOwnerRejectBooking(d) {
   if (rowStatus !== 'PENDING' && rowStatus !== 'MOD_PROPOSED') {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'already_handled' })).setMimeType(ContentService.MimeType.JSON);
   }
+  // Calendar sync holds this same lock for the whole sheet scan (can exceed 20s). Wait longer and keep
+  // the locked section short (sheet only) so we do not stack slow Calendar calls on top of sync work.
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) {
+  if (!lock.tryLock(120000)) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'server_busy' })).setMimeType(ContentService.MimeType.JSON);
   }
   try {
+    const statusFresh = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
+    if (statusFresh !== 'PENDING' && statusFresh !== 'MOD_PROPOSED') {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'already_handled' })).setMimeType(ContentService.MimeType.JSON);
+    }
     sheet.getRange(rowIndex, 8).setValue('REJECTED');
     sheet.getRange(rowIndex, 12).setValue('');
     sheet.getRange(rowIndex, 13).setValue('');
     sheet.getRange(rowIndex, 14).setValue('');
     sheet.getRange(rowIndex, SHEET_COL_OWNER_DECLINE_REASON).setValue(reason);
     SpreadsheetApp.flush();
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    const ev = cal.getEventById(eventId);
-    if (ev) ev.deleteEvent();
   } finally {
     lock.releaseLock();
   }
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  const ev = cal.getEventById(eventId);
+  if (ev) ev.deleteEvent();
   const neatD = formatSheetDateForEmail(dateVal);
   const neatTime = formatSheetTimeForEmail(timeStr);
   const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service, reason);
