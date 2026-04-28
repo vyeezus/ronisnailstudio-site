@@ -772,36 +772,61 @@ function defaultWorkHoursObject_() {
   return { '1': { start: 11, end: 18 }, '2': { start: 11, end: 18 }, '3': { start: 9, end: 16 }, '5': { start: 9, end: 16 } };
 }
 
-function getWorkHoursObjectFromSheet_() {
+/** First column is weekday 0–6, or a calendar date (yyyy-mm-dd string or Date) for a one-off open day. */
+function sheetCellToScheduleKey_(raw) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
+    return { kind: 'date', ymd: Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd') };
+  }
+  const s = String(raw == null ? '' : raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { kind: 'date', ymd: s };
+  const d = parseInt(s, 10);
+  if (!isNaN(d) && d >= 0 && d <= 6) return { kind: 'dow', dow: d };
+  return { kind: 'skip' };
+}
+
+function getWorkHoursFromSheet_() {
   try {
     const ss = getCRMSpreadsheet();
     const sh = ss.getSheetByName(HOURS_SHEET_NAME);
     if (!sh) return null;
     const data = sh.getDataRange().getValues();
     if (data.length < 2) return null;
-    const out = {};
+    const weekly = {};
+    const dateOverrides = {};
     for (let i = 1; i < data.length; i++) {
       const rawD = data[i][0];
       if (rawD === '' || rawD === null || rawD === undefined) continue;
-      if (typeof rawD === 'object') continue;
-      const d = parseInt(String(rawD), 10);
       const st = Number(data[i][1]);
       const en = Number(data[i][2]);
-      if (isNaN(d) || d < 0 || d > 6) continue;
       if (!isFinite(st) || !isFinite(en) || st !== Math.floor(st) || en !== Math.floor(en)) continue;
       if (st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
-      out[String(d)] = { start: st, end: en };
+      const key = sheetCellToScheduleKey_(rawD);
+      if (key.kind === 'dow') {
+        weekly[String(key.dow)] = { start: st, end: en };
+      } else if (key.kind === 'date') {
+        dateOverrides[key.ymd] = { start: st, end: en };
+      }
     }
-    return Object.keys(out).length ? out : null;
+    if (!Object.keys(weekly).length && !Object.keys(dateOverrides).length) return null;
+    return { weekly: weekly, dateOverrides: dateOverrides };
   } catch (err) {
     return null;
   }
 }
 
+/**
+ * Public JSON: { weekly: { "0"–"6": { start, end } }, dateOverrides: { "yyyy-mm-dd": { start, end } } }.
+ * dateOverrides win for that calendar day (studio time zone). Legacy flat { "0": {...} } is no longer emitted.
+ */
 function getWorkHoursPayload_() {
-  const fromSheet = getWorkHoursObjectFromSheet_();
-  if (fromSheet) return fromSheet;
-  return defaultWorkHoursObject_();
+  const fromSheet = getWorkHoursFromSheet_();
+  if (fromSheet) {
+    return {
+      weekly: fromSheet.weekly,
+      dateOverrides: fromSheet.dateOverrides || {},
+    };
+  }
+  return { weekly: defaultWorkHoursObject_(), dateOverrides: {} };
 }
 
 function handleAdminSetWorkHours(d) {
@@ -812,12 +837,15 @@ function handleAdminSetWorkHours(d) {
   if (!d.hours || typeof d.hours !== 'object' || Array.isArray(d.hours)) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'bad_hours' })).setMimeType(ContentService.MimeType.JSON);
   }
+  const overrideObj =
+    d.dateOverrides && typeof d.dateOverrides === 'object' && !Array.isArray(d.dateOverrides) ? d.dateOverrides : {};
   const ss = getCRMSpreadsheet();
   let sh = ss.getSheetByName(HOURS_SHEET_NAME);
   if (!sh) sh = ss.insertSheet(HOURS_SHEET_NAME);
   sh.clear();
   sh.appendRow(['day', 'start', 'end']);
   const rows = [];
+  let anyOpen = false;
   for (let day = 0; day <= 6; day++) {
     const h = d.hours[day] !== undefined && d.hours[day] !== null ? d.hours[day] : d.hours[String(day)];
     if (!h || h.open !== true) continue;
@@ -825,9 +853,25 @@ function handleAdminSetWorkHours(d) {
     const en = Math.floor(Number(h.end));
     if (!isFinite(st) || !isFinite(en) || st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
     rows.push([day, st, en]);
+    anyOpen = true;
+  }
+  const overrideKeys = Object.keys(overrideObj).sort();
+  for (let i = 0; i < overrideKeys.length; i++) {
+    const ymd = overrideKeys[i];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    const oh = overrideObj[ymd];
+    if (!oh || oh.open === false) continue;
+    const ost = Math.floor(Number(oh.start));
+    const oen = Math.floor(Number(oh.end));
+    if (!isFinite(ost) || !isFinite(oen) || ost < 0 || ost > 23 || oen < 1 || oen > 24 || ost >= oen) continue;
+    rows.push([ymd, ost, oen]);
+    anyOpen = true;
+  }
+  if (!anyOpen) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'nothing_open' })).setMimeType(ContentService.MimeType.JSON);
   }
   if (rows.length > 0) {
-    sh.getRange(2, 1, rows.length, 3).setValues(rows);
+    sh.getRange(2, 1, rows.length + 1, 3).setValues(rows);
   }
   SpreadsheetApp.flush();
   return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
@@ -2373,8 +2417,12 @@ function isBookingWithinStudioHours_(start, durationMinutes) {
   const dm = Number(durationMinutes);
   if (!isFinite(dm) || dm <= 0) return false;
   const whAll = getWorkHoursPayload_();
-  const dow = start.getDay();
-  const wh = whAll[String(dow)];
+  const ymd = Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  let wh = whAll.dateOverrides && whAll.dateOverrides[ymd] ? whAll.dateOverrides[ymd] : null;
+  if (!wh && whAll.weekly) {
+    const dow = start.getDay();
+    wh = whAll.weekly[String(dow)];
+  }
   if (!wh) return false;
   const y = start.getFullYear();
   const mo = start.getMonth();

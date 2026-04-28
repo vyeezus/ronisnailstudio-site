@@ -33,28 +33,60 @@ function bootBookingPage() {
         3: { start: 9, end: 16 },
         5: { start: 9, end: 16 },
     };
-    let workHours = { ...DEFAULT_WORK_HOURS };
+    let weeklyHours = { ...DEFAULT_WORK_HOURS };
+    /** @type {Record<string, { start: number, end: number }>} */
+    let dateOverridesMap = {};
 
-    function dayHours(dayOfWeek) {
-        return workHours[dayOfWeek] || workHours[String(dayOfWeek)];
+    /** yyyy-mm-dd local — one-off hours override recurring weekly for that day. */
+    function hoursForDate(dateStr) {
+        if (dateOverridesMap[dateStr]) return dateOverridesMap[dateStr];
+        const p = dateStr.split('-').map(Number);
+        if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return null;
+        const dow = new Date(p[0], p[1] - 1, p[2]).getDay();
+        return weeklyHours[dow] || weeklyHours[String(dow)] || null;
     }
 
     function mergeWorkHoursFromPayload(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) return;
-        const next = {};
-        for (const k of Object.keys(data)) {
+        let weeklySource = null;
+        let rawOverrides = null;
+        if (data.weekly != null && typeof data.weekly === 'object' && !Array.isArray(data.weekly)) {
+            weeklySource = data.weekly;
+            if (data.dateOverrides != null && typeof data.dateOverrides === 'object' && !Array.isArray(data.dateOverrides)) {
+                rawOverrides = data.dateOverrides;
+            }
+        } else {
+            weeklySource = data;
+        }
+        const nextWeekly = {};
+        for (const k of Object.keys(weeklySource)) {
             const d = parseInt(k, 10);
             if (isNaN(d) || d < 0 || d > 6) continue;
-            const h = data[k];
+            const h = weeklySource[k];
             const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
             const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
             if (!isFinite(st) || !isFinite(en)) continue;
             const start = Math.floor(st);
             const end = Math.floor(en);
             if (start < 0 || end > 24 || start >= end) continue;
-            next[d] = { start, end };
+            nextWeekly[d] = { start, end };
         }
-        if (Object.keys(next).length > 0) workHours = next;
+        weeklyHours = nextWeekly;
+        const nextOv = {};
+        if (rawOverrides) {
+            for (const dk of Object.keys(rawOverrides)) {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dk)) continue;
+                const h = rawOverrides[dk];
+                const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
+                const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
+                if (!isFinite(st) || !isFinite(en)) continue;
+                const start = Math.floor(st);
+                const end = Math.floor(en);
+                if (start < 0 || end > 24 || start >= end) continue;
+                nextOv[dk] = { start, end };
+            }
+        }
+        dateOverridesMap = nextOv;
     }
 
     function loadWorkHoursJsonp(baseUrl) {
@@ -302,8 +334,8 @@ function bootBookingPage() {
         return new Date(p[0], p[1] - 1, p[2], hour, minute, 0);
     }
 
-    function isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr) {
-        const hours = dayHours(dayOfWeek);
+    function isOptimalSlot(slotStart, slotEnd, dateStr) {
+        const hours = hoursForDate(dateStr);
         if (!hours) return false;
         const workStart = localWallDateTime(dateStr, hours.start, 0);
         const workEnd = localWallDateTime(dateStr, hours.end, 0);
@@ -333,12 +365,12 @@ function bootBookingPage() {
         return true;
     }
 
-    function hasAnyAvailableSlot(dateStr, dayOfWeek) {
+    function hasAnyAvailableSlot(dateStr) {
         const p = dateStr.split('-').map(Number);
         const slotDayStart = new Date(p[0], p[1] - 1, p[2]);
         if (slotDayStart < minBookableStart) return false;
         if (dateStr > maxBookableYmd) return false;
-        const hours = dayHours(dayOfWeek);
+        const hours = hoursForDate(dateStr);
         if (!hours) return false;
         for (let h = hours.start; h < hours.end; h++) {
             for (const m of SLOT_START_MINUTES) {
@@ -397,15 +429,15 @@ function bootBookingPage() {
                 if (dateStr === formatDate(today)) btn.classList.add('today');
             } else if (dateStr > maxBookableYmd) {
                 btn.classList.add('unavailable');
-            } else if (!dayHours(dayOfWeek)) {
+            } else if (!hoursForDate(dateStr)) {
                 btn.classList.add('unavailable');
             } else {
-                if (!hasAnyAvailableSlot(dateStr, dayOfWeek)) {
+                if (!hasAnyAvailableSlot(dateStr)) {
                     btn.classList.add('unavailable');
                 } else {
                     btn.classList.add('available');
                     if (selectedDate === dateStr) btn.classList.add('selected');
-                    btn.addEventListener('click', () => selectDate(dateStr, btn, dayOfWeek));
+                    btn.addEventListener('click', () => selectDate(dateStr, btn));
                 }
             }
             calGrid.appendChild(btn);
@@ -443,7 +475,7 @@ function bootBookingPage() {
         renderCalendar();
     });
 
-    function selectDate(dateStr, btnEl, dayOfWeek) {
+    function selectDate(dateStr, btnEl) {
         const ae = document.activeElement;
         if (ae && typeof ae.blur === 'function') ae.blur();
 
@@ -459,14 +491,14 @@ function bootBookingPage() {
         slotsDateLabel.textContent = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
         requestAnimationFrame(() => {
-            renderTimeSlots(dateStr, dayOfWeek);
+            renderTimeSlots(dateStr);
             setTimeout(() => {
                 slotsSection.scrollIntoView({ behavior: 'auto', block: 'start' });
             }, 50);
         });
     }
 
-    function renderTimeSlots(dateStr, dayOfWeek) {
+    function renderTimeSlots(dateStr) {
         slotsContainer.innerHTML = '';
         const grid = document.createElement('div');
         grid.className = 'slots-grid';
@@ -476,7 +508,7 @@ function bootBookingPage() {
             return;
         }
 
-        const hours = dayHours(dayOfWeek);
+        const hours = hoursForDate(dateStr);
         if (!hours) {
             slotsContainer.innerHTML = '';
             return;
@@ -496,7 +528,7 @@ function bootBookingPage() {
                 const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
                 const isPastToday = isSlotStartInPastForToday(dateStr, slotStart);
-                const isOptimal = isOptimalSlot(slotStart, slotEnd, dayOfWeek, dateStr);
+                const isOptimal = isOptimalSlot(slotStart, slotEnd, dateStr);
 
                 const pill = document.createElement('button');
                 pill.className = 'slot-pill';

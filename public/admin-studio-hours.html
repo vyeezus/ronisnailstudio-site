@@ -83,6 +83,41 @@
         .admin-hours-page .cute-btn { flex: 1; min-width: 140px; border: none; cursor: pointer; font-family: var(--font-body); }
         .admin-hours-page .cute-btn.secondary { background: rgba(178, 115, 154, 0.15); color: var(--text-main); }
         .admin-hours-page .cute-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .section-label { font-family: var(--font-heading); font-size: 0.95rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-main); margin: 2rem 0 0.35rem; text-align: center; }
+        .extra-date-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto 1fr auto;
+            gap: 0.65rem;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding: 0.85rem 0.5rem;
+            border-bottom: 1px solid rgba(178, 115, 154, 0.1);
+        }
+        .extra-date-row input[type="date"] {
+            padding: 0.5rem 0.65rem;
+            border-radius: 10px;
+            border: 1px solid rgba(178, 115, 154, 0.2);
+            font-family: var(--font-body);
+            font-size: 0.88rem;
+            background: rgba(255,255,255,0.75);
+        }
+        .extra-date-row select { padding: 0.45rem 0.6rem; border-radius: 10px; border: 1px solid rgba(178, 115, 154, 0.15); font-size: 0.85rem; background: #fff; }
+        .extra-date-row .time-sep { color: var(--text-muted); font-size: 0.8rem; }
+        .extra-date-row .btn-rm {
+            border: none;
+            background: transparent;
+            color: #8b3a52;
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 0.25rem;
+        }
+        .btn-add-oneoff { width: 100%; margin-bottom: 0.5rem; }
+        @media (max-width: 520px) {
+            .extra-date-row {
+                grid-template-columns: 1fr;
+            }
+        }
         .remember { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-muted); }
         .remember input { width: auto; }
         .msg { padding: 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
@@ -120,7 +155,7 @@
         <div class="form-section admin-hours-page">
             <h1>Studio booking hours</h1>
             <p class="admin-nav"><a href="admin-owner-booking.html">Book a client (admin)</a> · <a href="index.html">Home</a></p>
-            <p class="sub">These hours control which days and time ranges appear on the public booking calendar. Saving updates the <strong>StudioHours</strong> tab in your Google Sheet.</p>
+            <p class="sub">Recurring <strong>weekday</strong> hours control the usual open days. <strong>One-off dates</strong> open a single calendar day (e.g. one Thursday) without turning on every Thursday. Saving updates the <strong>StudioHours</strong> sheet (column A is weekday 0–6 <em>or</em> a yyyy-mm-dd date).</p>
             <p class="note">The <strong>Save</strong> button talks to <strong>Google Apps Script</strong>, not only this website. Copy the latest <code>google_apps_script.js</code> from your repo into the Apps Script editor, save, then <strong>Deploy → Manage deployments → Edit → Version: New version → Deploy</strong>. One-time: run <code>setBookingAdminSecret</code> (put your secret in the code, then Run). Optional: <code>seedStudioHoursSheet</code>.</p>
             <div id="msg" class="msg" role="status"></div>
             <div class="secret-block">
@@ -131,7 +166,12 @@
                     Remember on this browser (stays after closing — uncheck to clear)
                 </label>
             </div>
+            <p class="section-label">Every week</p>
             <div id="days-wrap"></div>
+            <p class="section-label">One-off dates</p>
+            <p class="note" style="margin-top:0">Use for a single day you want bookable when that weekday is normally closed, or different hours for just that day.</p>
+            <div id="extra-dates-wrap"></div>
+            <button type="button" class="cute-btn secondary btn-add-oneoff" id="btn-add-date">+ Add one-off date</button>
             <div class="btn-row">
                 <button type="button" class="cute-btn secondary" id="btn-load">Load current hours</button>
                 <button type="button" class="cute-btn" id="btn-save">Save hours</button>
@@ -149,8 +189,12 @@
             var secretInput = document.getElementById('admin-secret');
             var rememberCb = document.getElementById('remember-secret');
             var wrap = document.getElementById('days-wrap');
+            var extraWrap = document.getElementById('extra-dates-wrap');
+            var btnAddDate = document.getElementById('btn-add-date');
             var btnLoad = document.getElementById('btn-load');
             var btnSave = document.getElementById('btn-save');
+            /** @type {{ ymd: string, start: number, end: number }[]} */
+            var extraDatesList = [];
 
             function hourOptions(selected) {
                 var opts = '';
@@ -212,10 +256,17 @@
                 msg.style.display = 'none';
             }
 
+            function weeklyFromPayload(data) {
+                if (!data || typeof data !== 'object') return null;
+                if (data.weekly != null && typeof data.weekly === 'object') return data.weekly;
+                return data;
+            }
+
             function applyPayload(data) {
                 if (!data || typeof data !== 'object') return;
+                var weekly = weeklyFromPayload(data);
                 for (var d = 0; d < 7; d++) {
-                    var h = data[d] != null ? data[d] : data[String(d)];
+                    var h = weekly && (weekly[d] != null ? weekly[d] : weekly[String(d)]);
                     var openEl = document.getElementById('open-' + d);
                     var startEl = document.getElementById('start-' + d);
                     var endEl = document.getElementById('end-' + d);
@@ -227,7 +278,78 @@
                         openEl.checked = false;
                     }
                 }
+                extraDatesList = [];
+                var ov = data.dateOverrides && typeof data.dateOverrides === 'object' ? data.dateOverrides : {};
+                Object.keys(ov)
+                    .sort()
+                    .forEach(function (k) {
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
+                        var o = ov[k];
+                        if (!o || typeof o.start !== 'number' || typeof o.end !== 'number' || o.start >= o.end) return;
+                        extraDatesList.push({ ymd: k, start: Math.floor(o.start), end: Math.floor(o.end) });
+                    });
+                renderExtraDates();
             }
+
+            function renderExtraDates() {
+                extraWrap.innerHTML = '';
+                extraDatesList.forEach(function (row, idx) {
+                    var el = document.createElement('div');
+                    el.className = 'extra-date-row';
+                    el.setAttribute('data-idx', String(idx));
+                    el.innerHTML =
+                        '<input type="date" class="extra-ymd" value="' +
+                        row.ymd +
+                        '" aria-label="One-off date">' +
+                        '<select class="extra-start" aria-label="Start time">' +
+                        hourOptions(row.start) +
+                        '</select>' +
+                        '<span class="time-sep">to</span>' +
+                        '<select class="extra-end" aria-label="End time">' +
+                        endHourOptions(row.end) +
+                        '</select>' +
+                        '<button type="button" class="btn-rm" data-remove="' +
+                        idx +
+                        '">Remove</button>';
+                    extraWrap.appendChild(el);
+                });
+                extraWrap.querySelectorAll('[data-remove]').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        var i = parseInt(b.getAttribute('data-remove'), 10);
+                        if (!isNaN(i)) {
+                            extraDatesList.splice(i, 1);
+                            renderExtraDates();
+                        }
+                    });
+                });
+            }
+
+            function defaultOneOffYmd() {
+                var t = new Date();
+                t.setDate(t.getDate() + 7);
+                var y = t.getFullYear();
+                var m = String(t.getMonth() + 1).padStart(2, '0');
+                var da = String(t.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + da;
+            }
+
+            btnAddDate.addEventListener('click', function () {
+                extraDatesList.push({ ymd: defaultOneOffYmd(), start: 9, end: 17 });
+                renderExtraDates();
+            });
+
+            extraWrap.addEventListener('change', function () {
+                extraWrap.querySelectorAll('.extra-date-row').forEach(function (rowEl) {
+                    var idx = parseInt(rowEl.getAttribute('data-idx'), 10);
+                    if (isNaN(idx) || !extraDatesList[idx]) return;
+                    var ymdIn = rowEl.querySelector('.extra-ymd');
+                    var stIn = rowEl.querySelector('.extra-start');
+                    var enIn = rowEl.querySelector('.extra-end');
+                    if (ymdIn) extraDatesList[idx].ymd = ymdIn.value;
+                    if (stIn) extraDatesList[idx].start = parseInt(stIn.value, 10);
+                    if (enIn) extraDatesList[idx].end = parseInt(enIn.value, 10);
+                });
+            });
 
             function loadHoursJsonp(baseUrl) {
                 return new Promise(function (resolve, reject) {
@@ -291,6 +413,19 @@
                 return hours;
             }
 
+            function buildDateOverridesObject() {
+                var out = {};
+                extraDatesList.forEach(function (r) {
+                    var y = String(r.ymd || '').trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(y)) return;
+                    var st = Math.floor(Number(r.start));
+                    var en = Math.floor(Number(r.end));
+                    if (isNaN(st) || isNaN(en) || st >= en || st < 0 || en > 23) return;
+                    out[y] = { open: true, start: st, end: en };
+                });
+                return out;
+            }
+
             btnSave.addEventListener('click', function () {
                 clearMsg();
                 var secret = secretInput.value.trim();
@@ -299,10 +434,18 @@
                     return;
                 }
                 var hours;
+                var dateOverrides;
                 try {
                     hours = buildHoursObject();
+                    dateOverrides = buildDateOverridesObject();
                 } catch (e) {
                     setMsg(false, e.message || 'Check start/end times.');
+                    return;
+                }
+                var anyWeekday = Object.keys(hours).length > 0;
+                var anyOneOff = Object.keys(dateOverrides).length > 0;
+                if (!anyWeekday && !anyOneOff) {
+                    setMsg(false, 'Turn on at least one weekday or add one one-off date.');
                     return;
                 }
                 try {
@@ -318,6 +461,7 @@
                         adminSetWorkHours: true,
                         adminSecret: secret,
                         hours: hours,
+                        dateOverrides: dateOverrides,
                     }),
                 })
                     .then(function (r) {
@@ -334,6 +478,8 @@
                             setMsg(true, 'Saved. The booking page will pick this up on the next load.');
                         } else if (data && data.message === 'unauthorized') {
                             setMsg(false, 'Wrong admin secret.');
+                        } else if (data && data.message === 'nothing_open') {
+                            setMsg(false, 'Nothing to save—enable a weekday or add a one-off date with valid hours.');
                         } else {
                             var m = data && data.message;
                             if (typeof m === 'string' && /^\s*</.test(m)) {
