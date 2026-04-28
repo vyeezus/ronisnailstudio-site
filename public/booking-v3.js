@@ -46,6 +46,11 @@ function bootBookingPage() {
         return weeklyHours[dow] || weeklyHours[String(dow)] || null;
     }
 
+    /** True when this day was explicitly opened/overridden in admin one-off dates. */
+    function isOneOffDateOverride_(dateStr) {
+        return !!dateOverridesMap[dateStr];
+    }
+
     function mergeWorkHoursFromPayload(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) return;
         let weeklySource = null;
@@ -427,7 +432,7 @@ function bootBookingPage() {
                     !isConflict &&
                     !isOverClosing &&
                     !isSlotStartInPastForToday(dateStr, slotStart) &&
-                    slotPassesMaxGapRule(slotStart, slotEnd, dateStr)
+                    (isOneOffDateOverride_(dateStr) || slotPassesMaxGapRule(slotStart, slotEnd, dateStr))
                 ) {
                     return true;
                 }
@@ -570,7 +575,7 @@ function bootBookingPage() {
                 const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
                 const isPastToday = isSlotStartInPastForToday(dateStr, slotStart);
-                const passesGap = slotPassesMaxGapRule(slotStart, slotEnd, dateStr);
+                const passesGap = isOneOffDateOverride_(dateStr) || slotPassesMaxGapRule(slotStart, slotEnd, dateStr);
 
                 const pill = document.createElement('button');
                 pill.className = 'slot-pill';
