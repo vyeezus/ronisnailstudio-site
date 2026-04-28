@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="favicon.png" type="image/png">
     <meta name="robots" content="noindex, nofollow">
-    <title>Studio hours (admin) | Roni's Nail Studio</title>
+    <title>Studio hours</title>
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -14,8 +14,6 @@
         .admin-nav { text-align: center; margin-bottom: 1rem; font-size: 0.88rem; }
         .admin-nav a { color: var(--text-accent); text-decoration: none; font-weight: 500; }
         .admin-nav a:hover { text-decoration: underline; }
-        .admin-hours-page .sub { font-size: 0.88rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; line-height: 1.6; }
-        .admin-hours-page .note { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem; padding: 0.85rem 1rem; background: rgba(178, 115, 154, 0.06); border-radius: 10px; line-height: 1.55; }
         .admin-hours-page label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 0.35rem; }
         .admin-hours-page input[type="password"], .admin-hours-page input[type="text"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid rgba(178, 115, 154, 0.2); border-radius: 10px; background: rgba(255,255,255,0.55); font-family: var(--font-body); font-size: 1rem; margin-bottom: 0.75rem; box-sizing: border-box; }
         .admin-hours-page input:focus { outline: none; border-color: var(--text-accent); }
@@ -146,35 +144,27 @@
 <body>
     <div class="background-texture"></div>
     <div class="background-overlay"></div>
-    <header class="hero">
-        <div class="title-wrapper">
-            <h1>Roni's Nail Studio</h1>
-        </div>
-    </header>
     <main class="container">
         <div class="form-section admin-hours-page">
-            <h1>Studio booking hours</h1>
-            <p class="admin-nav"><a href="admin-owner-booking.html">Book a client (admin)</a> · <a href="index.html">Home</a></p>
-            <p class="sub">Recurring <strong>weekday</strong> hours control the usual open days. <strong>One-off dates</strong> open a single calendar day (e.g. one Thursday) without turning on every Thursday. Saving updates the <strong>StudioHours</strong> sheet (column A is weekday 0–6 <em>or</em> a yyyy-mm-dd date).</p>
-            <p class="note">The <strong>Save</strong> button talks to <strong>Google Apps Script</strong>, not only this website. Copy the latest <code>google_apps_script.js</code> from your repo into the Apps Script editor, save, then <strong>Deploy → Manage deployments → Edit → Version: New version → Deploy</strong>. One-time: run <code>setBookingAdminSecret</code> (put your secret in the code, then Run). Optional: <code>seedStudioHoursSheet</code>.</p>
+            <h1>Studio hours</h1>
+            <p class="admin-nav"><a href="admin-owner-booking.html">Admin booking</a> · <a href="index.html">Home</a></p>
             <div id="msg" class="msg" role="status"></div>
             <div class="secret-block">
-                <label for="admin-secret">Admin secret</label>
-                <input type="password" id="admin-secret" autocomplete="current-password" placeholder="Your BOOKING_ADMIN_SECRET">
+                <label for="admin-secret">Secret</label>
+                <input type="password" id="admin-secret" autocomplete="current-password" placeholder="">
                 <label class="remember">
                     <input type="checkbox" id="remember-secret">
-                    Remember on this browser (stays after closing — uncheck to clear)
+                    Remember
                 </label>
             </div>
-            <p class="section-label">Every week</p>
+            <p class="section-label">Weekly</p>
             <div id="days-wrap"></div>
             <p class="section-label">One-off dates</p>
-            <p class="note" style="margin-top:0">Use for a single day you want bookable when that weekday is normally closed, or different hours for just that day.</p>
             <div id="extra-dates-wrap"></div>
             <button type="button" class="cute-btn secondary btn-add-oneoff" id="btn-add-date">+ Add one-off date</button>
             <div class="btn-row">
-                <button type="button" class="cute-btn secondary" id="btn-load">Load current hours</button>
-                <button type="button" class="cute-btn" id="btn-save">Save hours</button>
+                <button type="button" class="cute-btn secondary" id="btn-load">Load</button>
+                <button type="button" class="cute-btn" id="btn-save">Save</button>
             </div>
         </div>
     </main>
@@ -384,7 +374,7 @@
                 btnLoad.disabled = true;
                 function doneOk(data) {
                     applyPayload(data);
-                    setMsg(true, 'Loaded hours from the server.');
+                    setMsg(true, 'Loaded.');
                 }
                 loadHoursJsonp(PROXY)
                     .then(doneOk)
@@ -392,7 +382,7 @@
                         return loadHoursJsonp(DIRECT).then(doneOk);
                     })
                     .catch(function () {
-                        setMsg(false, 'Could not load hours. Check your connection or deploy the latest Apps Script.');
+                        setMsg(false, 'Could not load.');
                     })
                     .finally(function () {
                         btnLoad.disabled = false;
@@ -430,7 +420,7 @@
                 clearMsg();
                 var secret = secretInput.value.trim();
                 if (!secret) {
-                    setMsg(false, 'Enter your admin secret.');
+                    setMsg(false, 'Enter secret.');
                     return;
                 }
                 var hours;
@@ -445,7 +435,7 @@
                 var anyWeekday = Object.keys(hours).length > 0;
                 var anyOneOff = Object.keys(dateOverrides).length > 0;
                 if (!anyWeekday && !anyOneOff) {
-                    setMsg(false, 'Turn on at least one weekday or add one one-off date.');
+                    setMsg(false, 'Enable a weekday or add a one-off date.');
                     return;
                 }
                 try {
@@ -475,17 +465,17 @@
                     })
                     .then(function (data) {
                         if (data && data.status === 'success') {
-                            setMsg(true, 'Saved. The booking page will pick this up on the next load.');
+                            setMsg(true, 'Saved.');
                         } else if (data && data.message === 'unauthorized') {
-                            setMsg(false, 'Wrong admin secret.');
+                            setMsg(false, 'Wrong secret.');
                         } else if (data && data.message === 'nothing_open') {
-                            setMsg(false, 'Nothing to save—enable a weekday or add a one-off date with valid hours.');
+                            setMsg(false, 'Nothing to save.');
                         } else {
                             var m = data && data.message;
                             if (typeof m === 'string' && /^\s*</.test(m)) {
-                                setMsg(false, 'Google returned a web page instead of JSON. Open Apps Script → Deploy → Manage deployments → your Web app → Edit → choose “New version” → Deploy. Make sure this project’s code includes Save hours (adminSetWorkHours) in doPost.');
+                                setMsg(false, 'Deploy a new Apps Script version and try again.');
                             } else {
-                                setMsg(false, (m && m.length < 500 ? m : m ? m.slice(0, 500) + '…' : '') || 'Save failed. Paste the latest google_apps_script.js into your Apps Script project, deploy a new version, and try again.');
+                                setMsg(false, (m && m.length < 500 ? m : m ? m.slice(0, 500) + '…' : '') || 'Save failed.');
                             }
                         }
                     })
