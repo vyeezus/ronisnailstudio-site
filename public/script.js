@@ -27,6 +27,14 @@ const SQUARE_SERVICE_MAP = {
 };
 // ------------------------------------------
 
+/** Base services that include removal work — Tier 4 art adds 10m (not 60m) on top of these. */
+const REMOVAL_BASE_FOR_TIER4_TIME = {
+    'sg-removal-new': true,
+    'gx-removal-short': true,
+    'gx-removal-medium': true,
+    'gx-removal-long': true,
+};
+
 /** Warm HTTP cache for the booking flow once the user can tap Book (helps mobile a lot). */
 const BOOKING_JS_HREF = 'booking-v3.js?v=max_gap_1h_v1';
 let bookingPrefetchStarted = false;
@@ -93,8 +101,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedTier && selectedTier.value !== 'none') {
             const pMin = parseInt(selectedTier.dataset.priceMin);
             const pMax = parseInt(selectedTier.dataset.priceMax);
-            const time = parseInt(selectedTier.dataset.time);
-            
+            let time = parseInt(selectedTier.dataset.time);
+            if (selectedTier.value === 'tier4' && selectedBase && REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value]) {
+                time = 10;
+            }
+
             minPrice += pMin;
             maxPrice += pMax;
             totalTime += time;

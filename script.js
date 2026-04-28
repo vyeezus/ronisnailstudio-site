@@ -26,6 +26,13 @@ const SQUARE_SERVICE_MAP = {
 };
 // ------------------------------------------
 
+const REMOVAL_BASE_FOR_TIER4_TIME = {
+    'sg-removal-new': true,
+    'gx-removal-short': true,
+    'gx-removal-medium': true,
+    'gx-removal-long': true,
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     // Booking Form Selectors
     const baseServices = document.querySelectorAll('input[name="base-service"]');
@@ -78,8 +85,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedTier && selectedTier.value !== 'none') {
             const pMin = parseInt(selectedTier.dataset.priceMin);
             const pMax = parseInt(selectedTier.dataset.priceMax);
-            const time = parseInt(selectedTier.dataset.time);
-            
+            let time = parseInt(selectedTier.dataset.time);
+            if (selectedTier.value === 'tier4' && selectedBase && REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value]) {
+                time = 10;
+            }
+
             minPrice += pMin;
             maxPrice += pMax;
             totalTime += time;

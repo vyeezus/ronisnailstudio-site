@@ -891,7 +891,7 @@
                     <label class="list-row luxury-radio">
                         <input type="radio" name="admin-design-tier" value="tier4" data-price-min="60" data-price-max="80" data-time="60">
                         <div class="row-content">
-                            <div class="row-info"><h3>Tier 4: Extreme Art</h3><p class="desc">Maximalist heavy layering, charms, sculpted</p></div>
+                            <div class="row-info"><h3>Tier 4: Extreme Art</h3><p class="desc">Maximalist heavy layering, charms, sculpted. With removal + new set or Gel-X removal, art adds ~10m.</p></div>
                             <div class="row-meta"><span class="price">+$60 - $80+</span><span class="time">~ 1h</span></div>
                         </div>
                     </label>
@@ -980,6 +980,12 @@
                 tier3: 'Tier 3: Advanced Art',
                 tier4: 'Tier 4: Extreme Art',
             };
+            var ADMIN_REMOVAL_BASE_FOR_TIER4_TIME = {
+                'sg-removal-new': true,
+                'gx-removal-short': true,
+                'gx-removal-medium': true,
+                'gx-removal-long': true,
+            };
 
             function buildAdminServiceDescription() {
                 if (!adminServiceRoot) return '';
@@ -1016,7 +1022,15 @@
                 }
                 var selectedTier = adminServiceRoot.querySelector('input[name="admin-design-tier"]:checked');
                 if (selectedTier && selectedTier.value !== 'none') {
-                    totalTime += parseInt(selectedTier.getAttribute('data-time'), 10) || 0;
+                    var tierMins = parseInt(selectedTier.getAttribute('data-time'), 10) || 0;
+                    if (
+                        selectedTier.value === 'tier4' &&
+                        selectedBase &&
+                        ADMIN_REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value]
+                    ) {
+                        tierMins = 10;
+                    }
+                    totalTime += tierMins;
                 }
                 var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                 if (foreignCb && foreignCb.checked) {
