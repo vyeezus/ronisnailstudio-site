@@ -871,7 +871,8 @@ function handleAdminSetWorkHours(d) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'nothing_open' })).setMimeType(ContentService.MimeType.JSON);
   }
   if (rows.length > 0) {
-    sh.getRange(2, 1, rows.length + 1, 3).setValues(rows);
+    // getRange(row, column, numRows, numColumns) — third arg is count of rows, not last row index.
+    sh.getRange(2, 1, rows.length, 3).setValues(rows);
   }
   SpreadsheetApp.flush();
   return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
