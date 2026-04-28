@@ -370,27 +370,26 @@ function bootBookingPage() {
     }
 
     /**
-     * No bookable slot may leave more than 1h of empty calendar between work/previous busy and slot start,
-     * or between slot end and the next busy (if any). Filling a gap unlocks later starts naturally.
-     * No limit on empty time after the last appointment until closing — only before the *next* event.
+     * No bookable slot may leave more than 1h empty between existing appointments.
+     * This does NOT enforce a limit from workday opening to the first appointment.
+     * No limit on empty time after the last appointment until closing.
      */
     function slotPassesMaxGapRule(slotStart, slotEnd, dateStr) {
         const hours = hoursForDate(dateStr);
         if (!hours) return false;
-        const workStart = localWallDateTime(dateStr, hours.start, 0);
         const merged = getMergedBusyIntervalsForDay(dateStr);
         const tSlot = slotStart.getTime();
         const tEnd = slotEnd.getTime();
 
-        let prevEnd = workStart;
+        let prevBusyEnd = null;
         for (let i = 0; i < merged.length; i++) {
             if (merged[i].end.getTime() <= tSlot) {
-                prevEnd = merged[i].end;
+                prevBusyEnd = merged[i].end;
             } else {
                 break;
             }
         }
-        if (tSlot - prevEnd.getTime() > MAX_EMPTY_GAP_MS) {
+        if (prevBusyEnd != null && tSlot - prevBusyEnd.getTime() > MAX_EMPTY_GAP_MS) {
             return false;
         }
 
