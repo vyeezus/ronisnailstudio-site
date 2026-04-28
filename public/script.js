@@ -28,7 +28,7 @@ const SQUARE_SERVICE_MAP = {
 // ------------------------------------------
 
 /** Warm HTTP cache for the booking flow once the user can tap Book (helps mobile a lot). */
-const BOOKING_JS_HREF = 'booking-v3.js?v=work_hours_oneoff_v1';
+const BOOKING_JS_HREF = 'booking-v3.js?v=max_gap_1h_v1';
 let bookingPrefetchStarted = false;
 function prefetchBookingAssets() {
     if (bookingPrefetchStarted) return;

@@ -323,7 +323,8 @@ function bootBookingPage() {
         }
     }
 
-    const GAP_THRESHOLD = 60;
+    /** Max empty time (ms) allowed before a new booking (after open / previous appt) or after it (before next appt). */
+    const MAX_EMPTY_GAP_MS = 60 * 60 * 1000;
     /** Start times offered on the hour grid (15-minute steps: :00, :15, :30, :45). */
     const SLOT_START_MINUTES = [0, 15, 30, 45];
 
@@ -334,34 +335,70 @@ function bootBookingPage() {
         return new Date(p[0], p[1] - 1, p[2], hour, minute, 0);
     }
 
-    function isOptimalSlot(slotStart, slotEnd, dateStr) {
+    /** Busy intervals on this local day clipped to work hours, sorted and merged. */
+    function getMergedBusyIntervalsForDay(dateStr) {
+        const hours = hoursForDate(dateStr);
+        if (!hours) return [];
+        const ws = localWallDateTime(dateStr, hours.start, 0);
+        const we = localWallDateTime(dateStr, hours.end, 0);
+        const raw = [];
+        busyTimes.forEach((b) => {
+            const bs = new Date(b.start);
+            const be = new Date(b.end);
+            if (!(bs < we && be > ws)) return;
+            raw.push({
+                start: new Date(Math.max(bs.getTime(), ws.getTime())),
+                end: new Date(Math.min(be.getTime(), we.getTime())),
+            });
+        });
+        raw.sort((a, b) => a.start - b.start);
+        const merged = [];
+        for (const iv of raw) {
+            if (!merged.length || iv.start.getTime() > merged[merged.length - 1].end.getTime()) {
+                merged.push({ start: iv.start, end: iv.end });
+            } else {
+                const last = merged[merged.length - 1];
+                last.end = new Date(Math.max(last.end.getTime(), iv.end.getTime()));
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * No bookable slot may leave more than 1h of empty calendar between work/previous busy and slot start,
+     * or between slot end and the next busy (if any). Filling a gap unlocks later starts naturally.
+     * No limit on empty time after the last appointment until closing — only before the *next* event.
+     */
+    function slotPassesMaxGapRule(slotStart, slotEnd, dateStr) {
         const hours = hoursForDate(dateStr);
         if (!hours) return false;
         const workStart = localWallDateTime(dateStr, hours.start, 0);
-        const workEnd = localWallDateTime(dateStr, hours.end, 0);
+        const merged = getMergedBusyIntervalsForDay(dateStr);
+        const tSlot = slotStart.getTime();
+        const tEnd = slotEnd.getTime();
 
         let prevEnd = workStart;
-        busyTimes.forEach(busy => {
-            const bEnd = new Date(busy.end);
-            if (bEnd <= slotStart && bEnd > prevEnd) {
-                prevEnd = bEnd;
+        for (let i = 0; i < merged.length; i++) {
+            if (merged[i].end.getTime() <= tSlot) {
+                prevEnd = merged[i].end;
+            } else {
+                break;
             }
-        });
+        }
+        if (tSlot - prevEnd.getTime() > MAX_EMPTY_GAP_MS) {
+            return false;
+        }
 
-        let nextStart = workEnd;
-        busyTimes.forEach(busy => {
-            const bStart = new Date(busy.start);
-            if (bStart >= slotEnd && bStart < nextStart) {
-                nextStart = bStart;
+        let nextStart = null;
+        for (let i = 0; i < merged.length; i++) {
+            if (merged[i].start.getTime() >= tEnd) {
+                nextStart = merged[i].start;
+                break;
             }
-        });
-
-        const gapBefore = (slotStart - prevEnd) / 60000;
-        const gapAfter = (nextStart - slotEnd) / 60000;
-
-        if (gapBefore > 30 && gapBefore < GAP_THRESHOLD) return false;
-        if (gapAfter > 30 && gapAfter < GAP_THRESHOLD) return false;
-
+        }
+        if (nextStart != null && nextStart.getTime() - tEnd > MAX_EMPTY_GAP_MS) {
+            return false;
+        }
         return true;
     }
 
@@ -386,7 +423,12 @@ function bootBookingPage() {
                 const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
 
-                if (!isConflict && !isOverClosing && !isSlotStartInPastForToday(dateStr, slotStart)) {
+                if (
+                    !isConflict &&
+                    !isOverClosing &&
+                    !isSlotStartInPastForToday(dateStr, slotStart) &&
+                    slotPassesMaxGapRule(slotStart, slotEnd, dateStr)
+                ) {
                     return true;
                 }
             }
@@ -528,22 +570,18 @@ function bootBookingPage() {
                 const closingDateTime = localWallDateTime(dateStr, hours.end, 0);
                 const isOverClosing = slotEnd > closingDateTime;
                 const isPastToday = isSlotStartInPastForToday(dateStr, slotStart);
-                const isOptimal = isOptimalSlot(slotStart, slotEnd, dateStr);
+                const passesGap = slotPassesMaxGapRule(slotStart, slotEnd, dateStr);
 
                 const pill = document.createElement('button');
                 pill.className = 'slot-pill';
                 pill.textContent = timeStr12;
 
-                if (isConflict || isOverClosing || isPastToday) {
+                if (isConflict || isOverClosing || isPastToday || !passesGap) {
                     pill.classList.add('busy');
                     pill.style.textDecoration = 'line-through';
                     pill.style.opacity = '0.35';
                     pill.disabled = true;
                 } else {
-                    if (!isOptimal) {
-                        pill.classList.add('slot-pill-suboptimal');
-                        pill.style.opacity = '0.72';
-                    }
                     pill.addEventListener('click', () => {
                         selectedSlot = timeStr12;
                         document.querySelectorAll('.slot-pill.selected').forEach(p => p.classList.remove('selected'));
