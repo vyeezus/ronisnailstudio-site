@@ -420,6 +420,18 @@ function getActiveBookingEvent_(calendar, eventId) {
  * same script lock as this sync — otherwise a sync can see “event gone” while the row is still PENDING
  * and send a false “Appointment Cancelled” email to the client.
  */
+
+/** Start instant (ms) from sheet date (E) + time (F). NaN if unusable. */
+function appointmentRowStartMs_(dateVal, timeVal) {
+  const ymd = syncSheetDateToYyyyMmDd_(dateVal);
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return NaN;
+  const timeDisp = formatSheetTimeForEmail(timeVal);
+  if (!timeDisp) return NaN;
+  const d = parseYmdAndTimeLocal_(ymd, convertTo24Hour(timeDisp));
+  if (isNaN(d.getTime())) return NaN;
+  return d.getTime();
+}
+
 function syncCalendarToSpreadsheet() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
@@ -516,7 +528,9 @@ function syncCalendarToSpreadsheetBody_() {
           sheet.getRange(i + 1, 8).setValue('CANCELLED');
           sheet.getRange(i + 1, 11).setValue('');
           SpreadsheetApp.flush();
-          if (clientEmail) {
+          const startMs = appointmentRowStartMs_(data[i][4], data[i][5]);
+          const apptAlreadyPassed = !isNaN(startMs) && startMs < Date.now();
+          if (clientEmail && !apptAlreadyPassed) {
             const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
             MailApp.sendEmail({
               to: clientEmail,
@@ -525,6 +539,12 @@ function syncCalendarToSpreadsheetBody_() {
               htmlBody: html,
             });
             Logger.log('syncCalendarToSpreadsheet: cancellation email sent for row ' + (i + 1) + ' eventId=' + eventId);
+          } else if (clientEmail && apptAlreadyPassed) {
+            Logger.log(
+              'syncCalendarToSpreadsheet: row ' +
+                (i + 1) +
+                ' marked CANCELLED; no client email (appointment start already in the past)'
+            );
           } else {
             Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' event missing but no client email — no email sent');
           }
