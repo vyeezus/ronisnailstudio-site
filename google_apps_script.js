@@ -468,13 +468,18 @@ function syncCalendarToSpreadsheetBody_() {
             Logger.log('syncCalendarToSpreadsheet: row ' + (i + 1) + ' already CANCELLED — skip (no duplicate email)');
             continue;
           }
-          if (statusFresh === 'CONFIRMED' || statusFresh === 'CLIENT_CONFIRMED') {
+          // Approve race only: snapshot still PENDING/MOD_PROPOSED but sheet already CONFIRMED with a new event id.
+          // If snapshot is already CONFIRMED and the event is gone, we must NOT skip — owner deleted the calendar event.
+          if (
+            (status === 'PENDING' || status === 'MOD_PROPOSED') &&
+            (statusFresh === 'CONFIRMED' || statusFresh === 'CLIENT_CONFIRMED')
+          ) {
             Logger.log(
               'syncCalendarToSpreadsheet: row ' +
                 (i + 1) +
-                ' skip cancel — sheet is now ' +
+                ' skip cancel — sheet moved to ' +
                 statusFresh +
-                ' (approve likely raced this sync; snapshot was ' +
+                ' during sync (snapshot was ' +
                 status +
                 ')'
             );
@@ -493,17 +498,6 @@ function syncCalendarToSpreadsheetBody_() {
           }
         }
         if (!event) {
-          const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
-          if (statusFresh === 'CONFIRMED' || statusFresh === 'CLIENT_CONFIRMED') {
-            Logger.log(
-              'syncCalendarToSpreadsheet: row ' +
-                (i + 1) +
-                ' skip cancel — re-check: now ' +
-                statusFresh +
-                ' after event id retry'
-            );
-            continue;
-          }
           markedCancelled++;
           const clientName = data[i][1];
           const clientEmail = data[i][6];
@@ -2178,7 +2172,7 @@ function sendTwoDayReminders() {
     if (!eventId || !tok) continue;
     let ev;
     try {
-      ev = calendar.getEventById(eventId);
+      ev = getActiveBookingEvent_(calendar, eventId);
     } catch (err) {
       continue;
     }
