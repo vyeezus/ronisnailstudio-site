@@ -397,7 +397,7 @@ function calendarEventIdsMatch_(idA, idB) {
  *
  * @param {GoogleAppsScript.Calendar.Calendar} calendar
  * @param {string} eventId
- * @param {Date=} sheetStartHint  Appointment start from sheet date/time when it differs from calendar (optional).
+ * @param {Date} [sheetStartHint]  Appointment start from sheet date/time when it differs from calendar (optional).
  */
 function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   const want = String(eventId || '').trim();
