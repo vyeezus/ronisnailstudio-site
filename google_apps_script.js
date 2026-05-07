@@ -369,11 +369,37 @@ function calendarApiEventStatus_(eventId) {
 }
 
 /**
+ * Calendar IDs sometimes differ by @google.com suffix; recurring instances use baseId_timestamp.
+ * Strict === between sheet cell and getEvents() caused false "event missing" → sheet CANCELLED + client email.
+ */
+function normalizeCalendarEventIdForCompare_(id) {
+  let s = String(id == null ? '').trim().toLowerCase();
+  if (s.endsWith('@google.com')) {
+    s = s.slice(0, -'@google.com'.length);
+  }
+  return s;
+}
+
+function calendarEventIdsMatch_(idA, idB) {
+  const a = normalizeCalendarEventIdForCompare_(idA);
+  const b = normalizeCalendarEventIdForCompare_(idB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (b.length > a.length && b.slice(0, a.length + 1) === a + '_') return true;
+  if (a.length > b.length && a.slice(0, b.length + 1) === b + '_') return true;
+  return false;
+}
+
+/**
  * Deleted events often stay in Calendar "trash" but disappear from normal listings.
  * getEventById() can still return them — so we only trust an event that also appears in getEvents(),
  * unless the Advanced Calendar API says the event is active (then we skip the list check).
+ *
+ * @param {GoogleAppsScript.Calendar.Calendar} calendar
+ * @param {string} eventId
+ * @param {Date=} sheetStartHint  Appointment start from sheet date/time when it differs from calendar (optional).
  */
-function getActiveBookingEvent_(calendar, eventId) {
+function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   const want = String(eventId || '').trim();
   if (!want) return null;
 
@@ -392,17 +418,40 @@ function getActiveBookingEvent_(calendar, eventId) {
     return ev;
   }
 
-  try {
-    const center = ev.getStartTime();
-    const from = new Date(center.getTime() - 120 * 86400000);
-    const to = new Date(center.getTime() + 120 * 86400000);
-    const listed = calendar.getEvents(from, to);
-    for (let i = 0; i < listed.length; i++) {
-      if (String(listed[i].getId()) === want) return ev;
+  function listedInRange_(from, to) {
+    try {
+      const listed = calendar.getEvents(from, to);
+      for (let i = 0; i < listed.length; i++) {
+        if (calendarEventIdsMatch_(listed[i].getId(), want)) return true;
+      }
+    } catch (err2) {
+      return false;
     }
-  } catch (err2) {
-    return null;
+    return false;
   }
+
+  const center = ev.getStartTime();
+  const hints = [];
+  if (center && !isNaN(center.getTime())) hints.push(center);
+  if (sheetStartHint && !isNaN(sheetStartHint.getTime())) hints.push(sheetStartHint);
+
+  for (let hi = 0; hi < hints.length; hi++) {
+    const c = hints[hi];
+    let from = new Date(c.getTime() - 120 * 86400000);
+    let to = new Date(c.getTime() + 120 * 86400000);
+    if (listedInRange_(from, to)) return ev;
+  }
+
+  if (center && !isNaN(center.getTime())) {
+    const from = new Date(center.getTime() - 400 * 86400000);
+    const to = new Date(center.getTime() + 400 * 86400000);
+    if (listedInRange_(from, to)) return ev;
+  }
+
+  Logger.log(
+    'getActiveBookingEvent_: getEventById ok but ID not found in getEvents (unknown API). id=' +
+      String(want).substring(0, 56)
+  );
   return null;
 }
 
@@ -473,7 +522,9 @@ function syncCalendarToSpreadsheetBody_() {
         String(eventId).indexOf('pending') < 0
       ) {
         qualifying++;
-        let event = getActiveBookingEvent_(calendar, eventId);
+        const sheetStartMs = appointmentRowStartMs_(data[i][4], data[i][5]);
+        const sheetStartHint = isNaN(sheetStartMs) ? null : new Date(sheetStartMs);
+        let event = getActiveBookingEvent_(calendar, eventId, sheetStartHint);
         if (!event) {
           const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
           if (statusFresh === 'CANCELLED') {
@@ -499,7 +550,7 @@ function syncCalendarToSpreadsheetBody_() {
           }
           const eventIdFresh = String(sheet.getRange(i + 1, 9).getValue() || '').trim();
           if (eventIdFresh && eventIdFresh !== String(eventId).trim()) {
-            event = getActiveBookingEvent_(calendar, eventIdFresh);
+            event = getActiveBookingEvent_(calendar, eventIdFresh, sheetStartHint);
             if (event) {
               Logger.log(
                 'syncCalendarToSpreadsheet: row ' +
@@ -528,7 +579,7 @@ function syncCalendarToSpreadsheetBody_() {
           sheet.getRange(i + 1, 8).setValue('CANCELLED');
           sheet.getRange(i + 1, 11).setValue('');
           SpreadsheetApp.flush();
-          const startMs = appointmentRowStartMs_(data[i][4], data[i][5]);
+          const startMs = sheetStartMs;
           const apptAlreadyPassed = !isNaN(startMs) && startMs < Date.now();
           if (clientEmail && !apptAlreadyPassed) {
             const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
@@ -1007,8 +1058,13 @@ function doGet(e) {
             SpreadsheetApp.flush();
             ev.deleteEvent();
           } else {
-            sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
-            SpreadsheetApp.flush();
+            Logger.log(
+              'owner accept: pending calendar event not found; not marking CONFIRMED (eventId=' + String(eventId) + ')'
+            );
+            return htmlPage(
+              'Calendar missing',
+              '<h2>Calendar event not found</h2><p>Google Calendar no longer has this pending hold. It may have been deleted. Refresh your booking sheet, then fix or re-book this client.</p>'
+            );
           }
         } finally {
           lock.releaseLock();
@@ -2190,9 +2246,11 @@ function sendTwoDayReminders() {
     const eventId = data[i][8];
     const tok = data[i][9];
     if (!eventId || !tok) continue;
+    const rowStartMs = appointmentRowStartMs_(data[i][4], data[i][5]);
+    const rowStartHint = isNaN(rowStartMs) ? null : new Date(rowStartMs);
     let ev;
     try {
-      ev = getActiveBookingEvent_(calendar, eventId);
+      ev = getActiveBookingEvent_(calendar, eventId, rowStartHint);
     } catch (err) {
       continue;
     }
