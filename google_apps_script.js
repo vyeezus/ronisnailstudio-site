@@ -484,6 +484,7 @@ function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
  * personal). (2) installCalendarSyncTrigger() — time-based backup; deletes sometimes don’t fire
  * onEventUpdated reliably on group calendars. (3) One deployment only (Head or version, not both).
  * Optional: Editor → Services → add “Google Calendar API” so deleted/cancelled events are detected reliably.
+ * Before running syncCalendarToSpreadsheet after code changes, run syncCalendarToSpreadsheetDryRun and read logs.
  *
  * Race guard: snapshots sheet rows at START; re-reads status + event id before cancelling. Approve must
  * write the new calendar id + CONFIRMED and flush before deleting the old PENDING event, and use the
@@ -509,13 +510,31 @@ function syncCalendarToSpreadsheet() {
     return;
   }
   try {
-    syncCalendarToSpreadsheetBody_();
+    syncCalendarToSpreadsheetBody_(false);
   } finally {
     lock.releaseLock();
   }
 }
 
-function syncCalendarToSpreadsheetBody_() {
+/**
+ * Same logic as syncCalendarToSpreadsheet but does not write the sheet, send email, or change calendar events.
+ * Run from the editor and read Executions → Logs before running the real sync.
+ */
+function syncCalendarToSpreadsheetDryRun() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    Logger.log('syncCalendarToSpreadsheetDryRun: skipped (another sync is running)');
+    return;
+  }
+  try {
+    syncCalendarToSpreadsheetBody_(true);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function syncCalendarToSpreadsheetBody_(dryRun) {
+  dryRun = dryRun === true;
   const tz = Session.getScriptTimeZone();
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
@@ -525,8 +544,12 @@ function syncCalendarToSpreadsheetBody_() {
   let stillOnCalendar = 0;
   let markedCancelled = 0;
   let timeUpdated = 0;
+  let dryRunWouldEmailCancel = 0;
+  let dryRunWouldEmailTimeUpdate = 0;
   Logger.log(
-    'syncCalendarToSpreadsheet: START sheet=' +
+    'syncCalendarToSpreadsheet: START ' +
+      (dryRun ? '[DRY RUN — no sheet/email/calendar edits] ' : '') +
+      'sheet=' +
       SHEET_NAME +
       ' dataRows=' +
       (data.length - 1) +
@@ -598,20 +621,40 @@ function syncCalendarToSpreadsheetBody_() {
           const service = data[i][3];
           const neatD = formatSheetDateForEmail(data[i][4]);
           const neatTime = formatSheetTimeForEmail(data[i][5]);
+          const startMs = sheetStartMs;
+          const apptAlreadyPassed = !isNaN(startMs) && startMs < Date.now();
           Logger.log(
-            'syncCalendarToSpreadsheet: row ' +
+            (dryRun ? '[DRY RUN] ' : '') +
+              'syncCalendarToSpreadsheet: row ' +
               (i + 1) +
-              ' no active event → CANCELLED (status was ' +
+              ' no active event → ' +
+              (dryRun ? 'WOULD set CANCELLED' : 'CANCELLED') +
+              ' (status was ' +
               status +
               ') eventId=' +
               String(eventId).substring(0, 40) +
               '…'
           );
+          if (dryRun) {
+            if (clientEmail && !apptAlreadyPassed) {
+              dryRunWouldEmailCancel++;
+              Logger.log(
+                '[DRY RUN] row ' +
+                  (i + 1) +
+                  ' WOULD send cancellation email to ' +
+                  String(clientEmail) +
+                  ' (not sent)'
+              );
+            } else if (clientEmail && apptAlreadyPassed) {
+              Logger.log('[DRY RUN] row ' + (i + 1) + ' would set CANCELLED only; no email (appointment in the past)');
+            } else {
+              Logger.log('[DRY RUN] row ' + (i + 1) + ' would set CANCELLED; no client email on row');
+            }
+            continue;
+          }
           sheet.getRange(i + 1, 8).setValue('CANCELLED');
           sheet.getRange(i + 1, 11).setValue('');
           SpreadsheetApp.flush();
-          const startMs = sheetStartMs;
-          const apptAlreadyPassed = !isNaN(startMs) && startMs < Date.now();
           if (clientEmail && !apptAlreadyPassed) {
             const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
             MailApp.sendEmail({
@@ -641,6 +684,24 @@ function syncCalendarToSpreadsheetBody_() {
         if (calDateYmd !== sheetDateYmd || calTimeNorm !== sheetTimeNorm) {
           timeUpdated++;
           const calTimeDisplay = Utilities.formatDate(calStart, tz, 'h:mm a');
+          if (dryRun) {
+            const clientEmailUp = data[i][6];
+            if (clientEmailUp) dryRunWouldEmailTimeUpdate++;
+            Logger.log(
+              '[DRY RUN] row ' +
+                (i + 1) +
+                ' WOULD update sheet date/time from calendar to ' +
+                calDateYmd +
+                ' ' +
+                calTimeDisplay +
+                '; ' +
+                (clientEmailUp
+                  ? 'WOULD email time-updated to ' + String(clientEmailUp)
+                  : 'no client email') +
+                '; WOULD applyBookingLocationToEvent_ (not run)'
+            );
+            continue;
+          }
           sheet.getRange(i + 1, 5).setValue(calStart);
           sheet.getRange(i + 1, 6).setValue(calTimeDisplay);
           sheet.getRange(i + 1, 11).setValue('');
@@ -665,14 +726,19 @@ function syncCalendarToSpreadsheetBody_() {
     }
   }
   Logger.log(
-    'syncCalendarToSpreadsheet: DONE qualifying=' +
+    'syncCalendarToSpreadsheet: DONE ' +
+      (dryRun ? '[DRY RUN — no changes applied] ' : '') +
+      'qualifying=' +
       qualifying +
       ' stillOnCalendar=' +
       stillOnCalendar +
       ' markedCancelled=' +
       markedCancelled +
       ' timeUpdated=' +
-      timeUpdated
+      timeUpdated +
+      (dryRun
+        ? ' dryRunWouldEmailCancel=' + dryRunWouldEmailCancel + ' dryRunWouldEmailTimeUpdate=' + dryRunWouldEmailTimeUpdate
+        : '')
   );
 }
 
