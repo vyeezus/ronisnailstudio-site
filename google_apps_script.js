@@ -476,9 +476,18 @@ function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   }
 
   Logger.log(
-    'getActiveBookingEvent_: getEventById ok but ID not found in getEvents (unknown API). id=' +
+    'getActiveBookingEvent_: getEventById ok but ID not found in getEvents listing. id=' +
       String(want).substring(0, 56)
   );
+  // With Advanced Calendar API off, api === 'unknown'. Listing often misses real events (group calendar,
+  // time zone windows, recurring/instance id shapes). Prefer a false "still on calendar" over emailing cancel.
+  if (api === 'unknown') {
+    Logger.log(
+      'getActiveBookingEvent_: API unknown + listing miss — trusting getEventById (avoid false cancellation). id=' +
+        String(want).substring(0, 48)
+    );
+    return ev;
+  }
   return null;
 }
 
