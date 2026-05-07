@@ -25,6 +25,12 @@ const MY_EMAIL = 'ronisnailstudio@gmail.com';
 const TWO_DAY_REMINDER_EMAIL_SUBJECT = "Please confirm your appointment — Roni's Nail Studio";
 const SPREADSHEET_ID = '16IJ_aJlAXWrF6UpM_g4Oia8rGGyAcmeR898STRX_5tc'; 
 /**
+ * Script property key: when set to 1/true (via pauseCalendarToSheetSync), live syncCalendarToSpreadsheet
+ * exits immediately so time/calendar triggers cannot rewrite the sheet after you restore version history.
+ * Dry run ignores this — use pause → restore → paste fixed code → dry run → resume.
+ */
+const PROP_DISABLE_CALENDAR_SYNC = 'DISABLE_CALENDAR_SYNC';
+/**
  * Web app URL — must be the /exec deployment (not /dev; /dev requires developer login).
  * After edits: Deploy → Manage deployments → Edit → New version → Deploy.
  */
@@ -503,7 +509,33 @@ function appointmentRowStartMs_(dateVal, timeVal) {
   return d.getTime();
 }
 
+function isCalendarToSheetSyncPaused_() {
+  var v = String(PropertiesService.getScriptProperties().getProperty(PROP_DISABLE_CALENDAR_SYNC) || '')
+    .trim()
+    .toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+/** Run once in the editor before restoring an older spreadsheet revision (then restore, then dry run, then resume). */
+function pauseCalendarToSheetSync() {
+  PropertiesService.getScriptProperties().setProperty(PROP_DISABLE_CALENDAR_SYNC, '1');
+  Logger.log(
+    'Calendar→sheet LIVE sync is PAUSED. Triggers will no-op until resumeCalendarToSheetSync(). Dry run still runs.'
+  );
+}
+
+function resumeCalendarToSheetSync() {
+  PropertiesService.getScriptProperties().deleteProperty(PROP_DISABLE_CALENDAR_SYNC);
+  Logger.log('Calendar→sheet live sync RESUMED.');
+}
+
 function syncCalendarToSpreadsheet() {
+  if (isCalendarToSheetSyncPaused_()) {
+    Logger.log(
+      'syncCalendarToSpreadsheet: skipped (pause is ON — run resumeCalendarToSheetSync when safe, or was left on after restore)'
+    );
+    return;
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     Logger.log('syncCalendarToSpreadsheet: skipped (another sync is running — avoids duplicate emails)');
