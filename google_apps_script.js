@@ -369,11 +369,13 @@ function calendarApiEventStatus_(eventId) {
 }
 
 /**
- * Calendar IDs sometimes differ by @google.com suffix; recurring instances use baseId_timestamp.
- * Strict === between sheet cell and getEvents() caused false "event missing" → sheet CANCELLED + client email.
+ * Calendar IDs sometimes differ by a google.com suffix; recurring instances use baseId_timestamp.
+ * Strict === between sheet cell and getEvents() caused false "event missing" then sheet CANCELLED + client email.
  */
-function normalizeCalendarEventIdForCompare_(id) {
-  let s = String(id == null ? '').trim().toLowerCase();
+function normalizeCalendarEventIdForCompare_(rawId) {
+  var s = '';
+  if (rawId != null) s = String(rawId);
+  s = s.trim().toLowerCase();
   if (s.endsWith('@google.com')) {
     s = s.slice(0, -'@google.com'.length);
   }
@@ -394,10 +396,7 @@ function calendarEventIdsMatch_(idA, idB) {
  * Deleted events often stay in Calendar "trash" but disappear from normal listings.
  * getEventById() can still return them — so we only trust an event that also appears in getEvents(),
  * unless the Advanced Calendar API says the event is active (then we skip the list check).
- *
- * @param {GoogleAppsScript.Calendar.Calendar} calendar
- * @param {string} eventId
- * @param {Date} [sheetStartHint]  Appointment start from sheet date/time when it differs from calendar (optional).
+ * sheetStartHint: optional appointment start from the sheet when it differs from the event.
  */
 function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   const want = String(eventId || '').trim();
