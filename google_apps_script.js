@@ -339,6 +339,8 @@ function normalizeSheetStatus_(raw) {
  * If Advanced Calendar API is enabled (Editor → Services → Google Calendar API), this is authoritative
  * for deleted / cancelled events. CalendarApp alone can still return trashed events from getEventById().
  * Returns: 'active' | 'gone' | 'unknown' (unknown = API off or non-404 error — use CalendarApp heuristic).
+ * Note: Events.get can 404 even when CalendarApp still shows the event (ID/calendar edge cases). Callers must
+ * not mass-cancel on API "gone" until CalendarApp + listing are checked (see getActiveBookingEvent_).
  */
 function calendarApiEventStatus_(eventId) {
   const want = String(eventId || '').trim();
@@ -402,19 +404,39 @@ function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   const want = String(eventId || '').trim();
   if (!want) return null;
 
-  const api = calendarApiEventStatus_(want);
-  if (api === 'gone') return null;
-
   let ev = null;
   try {
     ev = calendar.getEventById(want);
   } catch (err) {
-    return null;
+    ev = null;
   }
-  if (!ev) return null;
+
+  const api = calendarApiEventStatus_(want);
 
   if (api === 'active') {
-    return ev;
+    if (ev) {
+      return ev;
+    }
+    Logger.log(
+      'getActiveBookingEvent_: Calendar API active but CalendarApp.getEventById returned null; id=' +
+        String(want).substring(0, 56)
+    );
+    return null;
+  }
+
+  if (api === 'gone' && !ev) {
+    return null;
+  }
+
+  if (!ev) {
+    return null;
+  }
+
+  if (api === 'gone') {
+    Logger.log(
+      'getActiveBookingEvent_: API reports gone/not found but CalendarApp has event; verifying with getEvents. id=' +
+        String(want).substring(0, 56)
+    );
   }
 
   function listedInRange_(from, to) {
@@ -560,6 +582,16 @@ function syncCalendarToSpreadsheetBody_() {
           }
         }
         if (!event) {
+          const apiStillActive = calendarApiEventStatus_(String(eventId).trim());
+          if (apiStillActive === 'active') {
+            Logger.log(
+              'syncCalendarToSpreadsheet: row ' +
+                (i + 1) +
+                ' skip cancel — Calendar API still shows event active (CalendarApp lookup failed; avoid false mass-cancel)'
+            );
+            stillOnCalendar++;
+            continue;
+          }
           markedCancelled++;
           const clientName = data[i][1];
           const clientEmail = data[i][6];
