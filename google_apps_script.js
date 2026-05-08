@@ -143,6 +143,7 @@ function isDesignTierOrSoakoffSegment_(segment) {
   if (!t) return true;
   const low = t.toLowerCase();
   if (low.indexOf('foreign soak-off') >= 0) return true;
+  if (low.indexOf('gel x removal') >= 0) return true;
   if (/^tier\s*\d+/i.test(t)) return true;
   return false;
 }
@@ -402,8 +403,8 @@ function calendarEventIdsMatch_(idA, idB) {
 
 /**
  * Deleted events often stay in Calendar "trash" but disappear from normal listings.
- * getEventById() can still return them — so we only trust an event that also appears in getEvents(),
- * unless the Advanced Calendar API says the event is active (then we skip the list check).
+ * getEventById() can still return them — so when Advanced Calendar API is available we use it; when api is
+ * 'unknown' we try getEvents first, then trust getEventById if listing misses (group calendar false negatives).
  * sheetStartHint: optional appointment start from the sheet when it differs from the event.
  */
 function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {

@@ -855,6 +855,13 @@
                             <div class="row-meta"><span class="price">$90</span><span class="time">~ 1h 15m</span></div>
                         </div>
                     </label>
+                    <label class="list-row luxury-radio addon-gel-x-removal-label">
+                        <input type="checkbox" name="admin-addon-gel-x-removal" value="1" data-price="10" data-time="15" disabled aria-disabled="true">
+                        <div class="row-content">
+                            <div class="row-info"><h3>Gel X removal</h3><p class="desc">Add-on only with Gel X Short, Medium, or Long</p></div>
+                            <div class="row-meta"><span class="price">+$10</span><span class="time">~ 15m</span></div>
+                        </div>
+                    </label>
                 </div>
             </section>
             <section class="form-section">
@@ -986,6 +993,26 @@
                 'gx-removal-medium': true,
                 'gx-removal-long': true,
             };
+            var ADMIN_GEL_X_EXTENSION_BASES = { 'gx-short': true, 'gx-medium': true, 'gx-long': true };
+
+            function syncAdminGelXRemovalAvailability() {
+                if (!adminServiceRoot) return;
+                var cb = adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]');
+                if (!cb) return;
+                var base = adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
+                var ok = !!(base && ADMIN_GEL_X_EXTENSION_BASES[base.value]);
+                var label = cb.closest('.addon-gel-x-removal-label');
+                if (!ok) {
+                    cb.checked = false;
+                    cb.disabled = true;
+                    cb.setAttribute('aria-disabled', 'true');
+                    if (label) label.classList.add('addon-disabled');
+                } else {
+                    cb.disabled = false;
+                    cb.removeAttribute('aria-disabled');
+                    if (label) label.classList.remove('addon-disabled');
+                }
+            }
 
             function buildAdminServiceDescription() {
                 if (!adminServiceRoot) return '';
@@ -1006,6 +1033,15 @@
                     if (!ttext && ADMIN_TIER_LABELS[selectedTier.value]) ttext = ADMIN_TIER_LABELS[selectedTier.value];
                     if (ttext) parts.push(ttext);
                 }
+                var gelXCb = adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]');
+                if (
+                    gelXCb &&
+                    gelXCb.checked &&
+                    selectedBase &&
+                    ADMIN_GEL_X_EXTENSION_BASES[selectedBase.value]
+                ) {
+                    parts.push('Gel X removal');
+                }
                 var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                 if (foreignCb && foreignCb.checked) {
                     parts.push('Foreign soak-off removal');
@@ -1015,22 +1051,35 @@
 
             function recalcAdminDuration() {
                 if (!adminServiceRoot || !duration) return;
+                syncAdminGelXRemovalAvailability();
                 var totalTime = 0;
                 var selectedBase = adminServiceRoot.querySelector('input[name="admin-base-service"]:checked');
                 if (selectedBase) {
                     totalTime += parseInt(selectedBase.getAttribute('data-time'), 10) || 0;
                 }
+                var gelXRemovalOn =
+                    adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]') &&
+                    adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]').checked;
                 var selectedTier = adminServiceRoot.querySelector('input[name="admin-design-tier"]:checked');
                 if (selectedTier && selectedTier.value !== 'none') {
                     var tierMins = parseInt(selectedTier.getAttribute('data-time'), 10) || 0;
-                    if (
-                        selectedTier.value === 'tier4' &&
+                    var tier4RemovalCtx =
                         selectedBase &&
-                        ADMIN_REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value]
-                    ) {
+                        (ADMIN_REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value] ||
+                            (gelXRemovalOn && ADMIN_GEL_X_EXTENSION_BASES[selectedBase.value]));
+                    if (selectedTier.value === 'tier4' && tier4RemovalCtx) {
                         tierMins = 10;
                     }
                     totalTime += tierMins;
+                }
+                var gelXRem = adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]');
+                if (
+                    gelXRem &&
+                    gelXRem.checked &&
+                    selectedBase &&
+                    ADMIN_GEL_X_EXTENSION_BASES[selectedBase.value]
+                ) {
+                    totalTime += parseInt(gelXRem.getAttribute('data-time'), 10) || 15;
                 }
                 var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                 if (foreignCb && foreignCb.checked) {
@@ -1945,6 +1994,8 @@
                                 if (noneTier) noneTier.checked = true;
                                 var fo = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                                 if (fo) fo.checked = false;
+                                var gx = adminServiceRoot.querySelector('input[name="admin-addon-gel-x-removal"]');
+                                if (gx) gx.checked = false;
                                 recalcAdminDuration();
                             }
                         } else if (data && data.message === 'unauthorized') {

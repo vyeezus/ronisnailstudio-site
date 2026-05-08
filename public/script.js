@@ -16,6 +16,9 @@ const SQUARE_SERVICE_MAP = {
     'gx-removal-medium': 'B2GELF7B25XZVBXG5IZE6F2L',  // Removal + Gel X Medium - $90
     'gx-removal-long': 'C3LDH3JNIKUUAQN3IOIQK5YH',    // Removal + Gel X Long - $100
 
+    // Add-on with Gel X Short/Medium/Long only — replace value with Square catalog ID when the item exists
+    'gel-x-removal-addon': 'gel-x-removal-addon',
+
     // Removals — replace with your Square catalog ID when available
     'foreign-soakoff': 'foreign-soakoff',
 
@@ -33,6 +36,13 @@ const REMOVAL_BASE_FOR_TIER4_TIME = {
     'gx-removal-short': true,
     'gx-removal-medium': true,
     'gx-removal-long': true,
+};
+
+/** Gel X extension bases that may pair with the optional Gel X removal add-on */
+const GEL_X_EXTENSION_BASES = {
+    'gx-short': true,
+    'gx-medium': true,
+    'gx-long': true,
 };
 
 /** Warm HTTP cache for the booking flow once the user can tap Book (helps mobile a lot). */
@@ -54,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const baseServices = document.querySelectorAll('input[name="base-service"]');
     const designTiers = document.querySelectorAll('input[name="design-tier"]');
     const foreignSoakoffCb = document.querySelector('input[name="addon-foreign-soakoff"]');
+    const gelXRemovalCb = document.querySelector('input[name="addon-gel-x-removal"]');
     
     // Summary Selectors
     const summaryItems = document.getElementById('summary-items');
@@ -77,7 +88,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${m}m`;
     }
 
+    function syncGelXRemovalAvailability() {
+        const cb = document.querySelector('input[name="addon-gel-x-removal"]');
+        if (!cb) return;
+        const base = document.querySelector('input[name="base-service"]:checked');
+        const ok = !!(base && GEL_X_EXTENSION_BASES[base.value]);
+        const label = cb.closest('.addon-gel-x-removal-label');
+        if (!ok) {
+            cb.checked = false;
+            cb.disabled = true;
+            cb.setAttribute('aria-disabled', 'true');
+            if (label) label.classList.add('addon-disabled');
+        } else {
+            cb.disabled = false;
+            cb.removeAttribute('aria-disabled');
+            if (label) label.classList.remove('addon-disabled');
+        }
+    }
+
     function calculateTotal() {
+        syncGelXRemovalAvailability();
         summaryItems.innerHTML = '';
         let minPrice = 0;
         let maxPrice = 0;
@@ -98,11 +128,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Design Tier
         const selectedTier = document.querySelector('input[name="design-tier"]:checked');
+        const gelXRemovalOn =
+            document.querySelector('input[name="addon-gel-x-removal"]') &&
+            document.querySelector('input[name="addon-gel-x-removal"]').checked;
         if (selectedTier && selectedTier.value !== 'none') {
             const pMin = parseInt(selectedTier.dataset.priceMin);
             const pMax = parseInt(selectedTier.dataset.priceMax);
             let time = parseInt(selectedTier.dataset.time);
-            if (selectedTier.value === 'tier4' && selectedBase && REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value]) {
+            const tier4RemovalContext =
+                selectedBase &&
+                (REMOVAL_BASE_FOR_TIER4_TIME[selectedBase.value] ||
+                    (gelXRemovalOn && GEL_X_EXTENSION_BASES[selectedBase.value]));
+            if (selectedTier.value === 'tier4' && tier4RemovalContext) {
                 time = 10;
             }
 
@@ -114,6 +151,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const tierPrice =
                 selectedTier.value === 'tier4' ? `+$${pMin} - $${pMax}+` : `+$${pMin} - $${pMax}`;
             addSummaryItem(name, tierPrice);
+        }
+
+        const gelXRem = document.querySelector('input[name="addon-gel-x-removal"]');
+        if (gelXRem && gelXRem.checked && selectedBase && GEL_X_EXTENSION_BASES[selectedBase.value]) {
+            const gxp = parseInt(gelXRem.dataset.price, 10) || 10;
+            const gxt = parseInt(gelXRem.dataset.time, 10) || 15;
+            minPrice += gxp;
+            maxPrice += gxp;
+            totalTime += gxt;
+            addSummaryItem('Gel X removal', `+$${gxp}`);
         }
 
         // 3. Foreign soak-off add-on (+$20, no extra appointment time when combined with a base service)
@@ -182,6 +229,18 @@ document.addEventListener('DOMContentLoaded', () => {
             serviceNames.push(selectedTier.nextElementSibling.querySelector('h3').innerText.trim());
         }
 
+        const gelXRemGo = document.querySelector('input[name="addon-gel-x-removal"]');
+        if (
+            gelXRemGo &&
+            gelXRemGo.checked &&
+            selectedBase &&
+            GEL_X_EXTENSION_BASES[selectedBase.value] &&
+            SQUARE_SERVICE_MAP['gel-x-removal-addon']
+        ) {
+            squareServices.push(SQUARE_SERVICE_MAP['gel-x-removal-addon']);
+            serviceNames.push('Gel X removal');
+        }
+
         const foreignCbGo = document.querySelector('input[name="addon-foreign-soakoff"]');
         if (foreignCbGo && foreignCbGo.checked && SQUARE_SERVICE_MAP['foreign-soakoff']) {
             squareServices.push(SQUARE_SERVICE_MAP['foreign-soakoff']);
@@ -234,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Form Event listeners
     baseServices.forEach(el => el.addEventListener('change', calculateTotal));
     designTiers.forEach(el => el.addEventListener('change', calculateTotal));
+    if (gelXRemovalCb) gelXRemovalCb.addEventListener('change', calculateTotal);
     if (foreignSoakoffCb) foreignSoakoffCb.addEventListener('change', calculateTotal);
 
     // Initial calculation setup
