@@ -2800,4 +2800,4 @@ function convertTo24Hour(timeStr) {
   if (modifier === 'AM' && hours === 12) h = 0;
   if (modifier !== 'AM' && modifier !== 'PM') h = hours;
   return String(h).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':00';
-}user_query>
+}
