@@ -36,9 +36,12 @@ function bootBookingPage() {
     let weeklyHours = { ...DEFAULT_WORK_HOURS };
     /** @type {Record<string, { start: number, end: number }>} */
     let dateOverridesMap = {};
+    /** @type {Record<string, boolean>} */
+    let dateClosedMap = {};
 
     /** yyyy-mm-dd local — one-off hours override recurring weekly for that day. */
     function hoursForDate(dateStr) {
+        if (dateClosedMap[dateStr]) return null;
         if (dateOverridesMap[dateStr]) return dateOverridesMap[dateStr];
         const p = dateStr.split('-').map(Number);
         if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return null;
@@ -49,6 +52,11 @@ function bootBookingPage() {
     /** True when this day was explicitly opened/overridden in admin one-off dates. */
     function isOneOffDateOverride_(dateStr) {
         return !!dateOverridesMap[dateStr];
+    }
+
+    /** True when this calendar date is blocked (closed) even if the weekday is normally open. */
+    function isDateExplicitlyClosed_(dateStr) {
+        return !!dateClosedMap[dateStr];
     }
 
     function mergeWorkHoursFromPayload(data) {
@@ -78,10 +86,15 @@ function bootBookingPage() {
         }
         weeklyHours = nextWeekly;
         const nextOv = {};
+        const nextClosed = {};
         if (rawOverrides) {
             for (const dk of Object.keys(rawOverrides)) {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(dk)) continue;
                 const h = rawOverrides[dk];
+                if (h && h.open === false) {
+                    nextClosed[dk] = true;
+                    continue;
+                }
                 const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
                 const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
                 if (!isFinite(st) || !isFinite(en)) continue;
@@ -92,6 +105,7 @@ function bootBookingPage() {
             }
         }
         dateOverridesMap = nextOv;
+        dateClosedMap = nextClosed;
     }
 
     function loadWorkHoursJsonp(baseUrl) {

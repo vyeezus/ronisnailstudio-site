@@ -110,7 +110,26 @@
             text-decoration: underline;
             padding: 0.25rem;
         }
-        .btn-add-oneoff { width: 100%; margin-bottom: 0.5rem; }
+        .oneoff-btn-row { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 0.75rem; }
+        .oneoff-btn-row .cute-btn { flex: 1; min-width: 10rem; }
+        .oneoff-hint {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin: 0 0 1rem;
+            text-align: center;
+        }
+        .extra-date-row.closed {
+            grid-template-columns: 1fr auto;
+        }
+        .extra-date-row .kind-tag {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-accent);
+        }
+        .extra-date-row.closed .kind-tag { color: #8b3a52; }
         @media (max-width: 520px) {
             .extra-date-row {
                 grid-template-columns: 1fr;
@@ -160,8 +179,12 @@
             <p class="section-label">Weekly</p>
             <div id="days-wrap"></div>
             <p class="section-label">One-off dates</p>
+            <p class="oneoff-hint">Uncheck a weekday above to close every week (e.g. all Sundays). Use the buttons below for a single calendar date only.</p>
             <div id="extra-dates-wrap"></div>
-            <button type="button" class="cute-btn secondary btn-add-oneoff" id="btn-add-date">+ Add one-off date</button>
+            <div class="oneoff-btn-row">
+                <button type="button" class="cute-btn secondary" id="btn-add-open-date">+ Open a date (add hours)</button>
+                <button type="button" class="cute-btn secondary" id="btn-add-block-date">+ Block a date (closed)</button>
+            </div>
             <div class="btn-row">
                 <button type="button" class="cute-btn secondary" id="btn-load">Load</button>
                 <button type="button" class="cute-btn" id="btn-save">Save</button>
@@ -180,10 +203,11 @@
             var rememberCb = document.getElementById('remember-secret');
             var wrap = document.getElementById('days-wrap');
             var extraWrap = document.getElementById('extra-dates-wrap');
-            var btnAddDate = document.getElementById('btn-add-date');
+            var btnAddOpenDate = document.getElementById('btn-add-open-date');
+            var btnAddBlockDate = document.getElementById('btn-add-block-date');
             var btnLoad = document.getElementById('btn-load');
             var btnSave = document.getElementById('btn-save');
-            /** @type {{ ymd: string, start: number, end: number }[]} */
+            /** @type {{ ymd: string, kind: 'open'|'closed', start?: number, end?: number }[]} */
             var extraDatesList = [];
 
             function hourOptions(selected) {
@@ -275,32 +299,69 @@
                     .forEach(function (k) {
                         if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
                         var o = ov[k];
-                        if (!o || typeof o.start !== 'number' || typeof o.end !== 'number' || o.start >= o.end) return;
-                        extraDatesList.push({ ymd: k, start: Math.floor(o.start), end: Math.floor(o.end) });
+                        if (!o) return;
+                        if (o.open === false) {
+                            extraDatesList.push({ ymd: k, kind: 'closed' });
+                            return;
+                        }
+                        if (typeof o.start !== 'number' || typeof o.end !== 'number' || o.start >= o.end) return;
+                        extraDatesList.push({
+                            ymd: k,
+                            kind: 'open',
+                            start: Math.floor(o.start),
+                            end: Math.floor(o.end),
+                        });
                     });
                 renderExtraDates();
+            }
+
+            function syncExtraDatesFromDom() {
+                extraWrap.querySelectorAll('.extra-date-row').forEach(function (rowEl) {
+                    var idx = parseInt(rowEl.getAttribute('data-idx'), 10);
+                    if (isNaN(idx) || !extraDatesList[idx]) return;
+                    var ymdIn = rowEl.querySelector('.extra-ymd');
+                    if (ymdIn) extraDatesList[idx].ymd = ymdIn.value;
+                    if (extraDatesList[idx].kind === 'open') {
+                        var stIn = rowEl.querySelector('.extra-start');
+                        var enIn = rowEl.querySelector('.extra-end');
+                        if (stIn) extraDatesList[idx].start = parseInt(stIn.value, 10);
+                        if (enIn) extraDatesList[idx].end = parseInt(enIn.value, 10);
+                    }
+                });
             }
 
             function renderExtraDates() {
                 extraWrap.innerHTML = '';
                 extraDatesList.forEach(function (row, idx) {
                     var el = document.createElement('div');
-                    el.className = 'extra-date-row';
                     el.setAttribute('data-idx', String(idx));
-                    el.innerHTML =
-                        '<input type="date" class="extra-ymd" value="' +
-                        row.ymd +
-                        '" aria-label="One-off date">' +
-                        '<select class="extra-start" aria-label="Start time">' +
-                        hourOptions(row.start) +
-                        '</select>' +
-                        '<span class="time-sep">to</span>' +
-                        '<select class="extra-end" aria-label="End time">' +
-                        endHourOptions(row.end) +
-                        '</select>' +
-                        '<button type="button" class="btn-rm" data-remove="' +
-                        idx +
-                        '">Remove</button>';
+                    if (row.kind === 'closed') {
+                        el.className = 'extra-date-row closed';
+                        el.innerHTML =
+                            '<div><span class="kind-tag">Closed — no bookings</span><input type="date" class="extra-ymd" value="' +
+                            row.ymd +
+                            '" aria-label="Blocked date"></div>' +
+                            '<button type="button" class="btn-rm" data-remove="' +
+                            idx +
+                            '">Remove</button>';
+                    } else {
+                        el.className = 'extra-date-row';
+                        el.innerHTML =
+                            '<div><span class="kind-tag">Open — special hours</span></div>' +
+                            '<input type="date" class="extra-ymd" value="' +
+                            row.ymd +
+                            '" aria-label="Open date">' +
+                            '<select class="extra-start" aria-label="Start time">' +
+                            hourOptions(row.start) +
+                            '</select>' +
+                            '<span class="time-sep">to</span>' +
+                            '<select class="extra-end" aria-label="End time">' +
+                            endHourOptions(row.end) +
+                            '</select>' +
+                            '<button type="button" class="btn-rm" data-remove="' +
+                            idx +
+                            '">Remove</button>';
+                    }
                     extraWrap.appendChild(el);
                 });
                 extraWrap.querySelectorAll('[data-remove]').forEach(function (b) {
@@ -323,22 +384,18 @@
                 return y + '-' + m + '-' + da;
             }
 
-            btnAddDate.addEventListener('click', function () {
-                extraDatesList.push({ ymd: defaultOneOffYmd(), start: 9, end: 17 });
+            btnAddOpenDate.addEventListener('click', function () {
+                extraDatesList.push({ ymd: defaultOneOffYmd(), kind: 'open', start: 9, end: 17 });
+                renderExtraDates();
+            });
+
+            btnAddBlockDate.addEventListener('click', function () {
+                extraDatesList.push({ ymd: defaultOneOffYmd(), kind: 'closed' });
                 renderExtraDates();
             });
 
             extraWrap.addEventListener('change', function () {
-                extraWrap.querySelectorAll('.extra-date-row').forEach(function (rowEl) {
-                    var idx = parseInt(rowEl.getAttribute('data-idx'), 10);
-                    if (isNaN(idx) || !extraDatesList[idx]) return;
-                    var ymdIn = rowEl.querySelector('.extra-ymd');
-                    var stIn = rowEl.querySelector('.extra-start');
-                    var enIn = rowEl.querySelector('.extra-end');
-                    if (ymdIn) extraDatesList[idx].ymd = ymdIn.value;
-                    if (stIn) extraDatesList[idx].start = parseInt(stIn.value, 10);
-                    if (enIn) extraDatesList[idx].end = parseInt(enIn.value, 10);
-                });
+                syncExtraDatesFromDom();
             });
 
             function loadHoursJsonp(baseUrl) {
@@ -404,10 +461,15 @@
             }
 
             function buildDateOverridesObject() {
+                syncExtraDatesFromDom();
                 var out = {};
                 extraDatesList.forEach(function (r) {
                     var y = String(r.ymd || '').trim();
                     if (!/^\d{4}-\d{2}-\d{2}$/.test(y)) return;
+                    if (r.kind === 'closed') {
+                        out[y] = { open: false };
+                        return;
+                    }
                     var st = Math.floor(Number(r.start));
                     var en = Math.floor(Number(r.end));
                     if (isNaN(st) || isNaN(en) || st >= en || st < 0 || en > 23) return;
@@ -435,8 +497,19 @@
                 var anyWeekday = Object.keys(hours).length > 0;
                 var anyOneOff = Object.keys(dateOverrides).length > 0;
                 if (!anyWeekday && !anyOneOff) {
-                    setMsg(false, 'Enable a weekday or add a one-off date.');
+                    setMsg(false, 'Enable a weekday or add a one-off open/block date.');
                     return;
+                }
+                syncExtraDatesFromDom();
+                var seenYmd = Object.create(null);
+                for (var ei = 0; ei < extraDatesList.length; ei++) {
+                    var ey = String(extraDatesList[ei].ymd || '').trim();
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(ey)) continue;
+                    if (seenYmd[ey]) {
+                        setMsg(false, 'Each one-off date can only appear once (check for duplicates).');
+                        return;
+                    }
+                    seenYmd[ey] = true;
                 }
                 try {
                     if (rememberCb.checked) localStorage.setItem(STORAGE_KEY, secret);

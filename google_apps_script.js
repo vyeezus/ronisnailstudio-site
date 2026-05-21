@@ -428,10 +428,14 @@ function getWorkHoursFromSheet_() {
       const st = Number(data[i][1]);
       const en = Number(data[i][2]);
       if (!isFinite(st) || !isFinite(en) || st !== Math.floor(st) || en !== Math.floor(en)) continue;
-      if (st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
       const key = sheetCellToScheduleKey_(rawD);
+      if (key.kind === 'date' && st === 0 && en === 0) {
+        dateOverrides[key.ymd] = { open: false };
+        continue;
+      }
+      if (st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
       if (key.kind === 'dow') weekly[String(key.dow)] = { start: st, end: en };
-      else if (key.kind === 'date') dateOverrides[key.ymd] = { start: st, end: en };
+      else if (key.kind === 'date') dateOverrides[key.ymd] = { open: true, start: st, end: en };
     }
     if (!Object.keys(weekly).length && !Object.keys(dateOverrides).length) return null;
     return { weekly: weekly, dateOverrides: dateOverrides };
@@ -1324,7 +1328,12 @@ function handleAdminSetWorkHours(d) {
     const ymd = overrideKeys[i];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
     const oh = overrideObj[ymd];
-    if (!oh || oh.open === false) continue;
+    if (!oh) continue;
+    if (oh.open === false) {
+      rows.push([ymd, 0, 0]);
+      anyOpen = true;
+      continue;
+    }
     const ost = Math.floor(Number(oh.start));
     const oen = Math.floor(Number(oh.end));
     if (!isFinite(ost) || !isFinite(oen) || ost < 0 || ost > 23 || oen < 1 || oen > 24 || ost >= oen) continue;
@@ -2733,7 +2742,12 @@ function isBookingWithinStudioHours_(start, durationMinutes) {
   if (!isFinite(dm) || dm <= 0) return false;
   const whAll = getWorkHoursPayload_();
   const ymd = Utilities.formatDate(start, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  let wh = whAll.dateOverrides && whAll.dateOverrides[ymd] ? whAll.dateOverrides[ymd] : null;
+  const ov = whAll.dateOverrides && whAll.dateOverrides[ymd] ? whAll.dateOverrides[ymd] : null;
+  if (ov && ov.open === false) return false;
+  let wh = null;
+  if (ov && typeof ov.start === 'number' && typeof ov.end === 'number') {
+    wh = { start: ov.start, end: ov.end };
+  }
   if (!wh && whAll.weekly) {
     const dow = start.getDay();
     wh = whAll.weekly[String(dow)];
