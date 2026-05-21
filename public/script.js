@@ -163,12 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
             addSummaryItem('Gel X removal', `+$${gxp}`);
         }
 
-        // 3. Foreign soak-off add-on (+$20, no extra appointment time when combined with a base service)
+        // 3. Foreign removal add-on (+$20, no extra appointment time when combined with a base service)
         const foreignCb = document.querySelector('input[name="addon-foreign-soakoff"]');
         if (foreignCb && foreignCb.checked) {
             minPrice += 20;
             maxPrice += 20;
-            addSummaryItem('Foreign soak-off removal', '+$20');
+            addSummaryItem('Foreign removal', '+$20');
             if (!selectedBase) {
                 totalTime = 15;
             }
@@ -244,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const foreignCbGo = document.querySelector('input[name="addon-foreign-soakoff"]');
         if (foreignCbGo && foreignCbGo.checked && SQUARE_SERVICE_MAP['foreign-soakoff']) {
             squareServices.push(SQUARE_SERVICE_MAP['foreign-soakoff']);
-            serviceNames.push('Foreign soak-off removal');
+            serviceNames.push('Foreign removal');
         }
 
         // Grab Price/Time for the next page

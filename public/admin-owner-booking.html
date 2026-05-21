@@ -906,12 +906,12 @@
             </section>
             <section class="form-section">
                 <h2>03. Removals <span class="subtitle">(Add-on)</span></h2>
-                <p class="category-desc">No acrylic removals.</p>
+                <p class="category-desc">For nails that I did not do. No acrylic removals.</p>
                 <div class="service-list">
                     <label class="list-row luxury-checkbox">
                         <input type="checkbox" name="admin-addon-foreign-soakoff" value="1">
                         <div class="row-content">
-                            <div class="row-info"><h3>Foreign soak-off removal</h3></div>
+                            <div class="row-info"><h3>Foreign removal</h3></div>
                             <div class="row-meta"><span class="price">+$20</span></div>
                         </div>
                     </label>
@@ -1044,7 +1044,7 @@
                 }
                 var foreignCb = adminServiceRoot.querySelector('input[name="admin-addon-foreign-soakoff"]');
                 if (foreignCb && foreignCb.checked) {
-                    parts.push('Foreign soak-off removal');
+                    parts.push('Foreign removal');
                 }
                 return parts.join(' · ');
             }
@@ -1095,7 +1095,7 @@
                     }
                 } else {
                     if (durationHint) {
-                        durationHint.textContent = 'Pick a base service or foreign soak-off to set duration.';
+                        durationHint.textContent = 'Pick a base service or foreign removal to set duration.';
                     }
                 }
             }
@@ -1946,7 +1946,7 @@
                     return;
                 }
                 if (!hasAdminBookableSelection() || !svc) {
-                    setMsg(false, 'Choose a base service and/or foreign soak-off (same as the public booking page).');
+                    setMsg(false, 'Choose a base service and/or foreign removal (same as the public booking page).');
                     return;
                 }
                 if (isNaN(dur) || dur < 15) dur = 75;

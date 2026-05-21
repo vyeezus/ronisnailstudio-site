@@ -102,7 +102,7 @@ function isDesignTierOrSoakoffSegment_(segment) {
   const t = String(segment || '').trim();
   if (!t) return true;
   const low = t.toLowerCase();
-  if (low.indexOf('foreign soak-off') >= 0) return true;
+  if (low.indexOf('foreign soak-off') >= 0 || low.indexOf('foreign removal') >= 0) return true;
   if (low.indexOf('gel x removal') >= 0) return true;
   if (/^tier\s*\d+/i.test(t)) return true;
   return false;

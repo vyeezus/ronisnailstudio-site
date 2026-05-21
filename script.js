@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (foreignCb && foreignCb.checked) {
             minPrice += 20;
             maxPrice += 20;
-            addSummaryItem('Foreign soak-off removal', '+$20');
+            addSummaryItem('Foreign removal', '+$20');
             if (!selectedBase) {
                 totalTime = 15;
             }
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const foreignCbGo = document.querySelector('input[name="addon-foreign-soakoff"]');
         if (foreignCbGo && foreignCbGo.checked && SQUARE_SERVICE_MAP['foreign-soakoff']) {
             squareServices.push(SQUARE_SERVICE_MAP['foreign-soakoff']);
-            serviceNames.push('Foreign soak-off removal');
+            serviceNames.push('Foreign removal');
         }
 
         // Build Square URL with service IDs
