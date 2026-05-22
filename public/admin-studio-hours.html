@@ -119,8 +119,23 @@
             margin: 0 0 1rem;
             text-align: center;
         }
-        .extra-date-row.closed {
+        .extra-date-row.closed,
+        .extra-date-row.closed-range {
             grid-template-columns: 1fr auto;
+        }
+        .extra-date-row.closed-range .range-fields {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .extra-date-row.closed-range .range-fields input[type="date"] {
+            flex: 1;
+            min-width: 8.5rem;
+        }
+        .extra-date-row.closed-range .range-sep {
+            color: var(--text-muted);
+            font-size: 0.85rem;
         }
         .extra-date-row .kind-tag {
             font-size: 0.72rem;
@@ -179,11 +194,12 @@
             <p class="section-label">Weekly</p>
             <div id="days-wrap"></div>
             <p class="section-label">One-off dates</p>
-            <p class="oneoff-hint">Uncheck a weekday above to close every week (e.g. all Sundays). Use the buttons below for a single calendar date only.</p>
+            <p class="oneoff-hint">Uncheck a weekday above to close every week (e.g. all Sundays). Use the buttons below for single dates or a closed range (e.g. May 12–May 21).</p>
             <div id="extra-dates-wrap"></div>
             <div class="oneoff-btn-row">
                 <button type="button" class="cute-btn secondary" id="btn-add-open-date">+ Open a date (add hours)</button>
-                <button type="button" class="cute-btn secondary" id="btn-add-block-date">+ Block a date (closed)</button>
+                <button type="button" class="cute-btn secondary" id="btn-add-block-date">+ Block one day</button>
+                <button type="button" class="cute-btn secondary" id="btn-add-block-range">+ Block date range</button>
             </div>
             <div class="btn-row">
                 <button type="button" class="cute-btn secondary" id="btn-load">Load</button>
@@ -205,10 +221,80 @@
             var extraWrap = document.getElementById('extra-dates-wrap');
             var btnAddOpenDate = document.getElementById('btn-add-open-date');
             var btnAddBlockDate = document.getElementById('btn-add-block-date');
+            var btnAddBlockRange = document.getElementById('btn-add-block-range');
             var btnLoad = document.getElementById('btn-load');
             var btnSave = document.getElementById('btn-save');
-            /** @type {{ ymd: string, kind: 'open'|'closed', start?: number, end?: number }[]} */
+            var MAX_BLOCK_RANGE_DAYS = 366;
+            /** @type {{ ymd?: string, ymdStart?: string, ymdEnd?: string, kind: 'open'|'closed'|'closed-range', start?: number, end?: number }[]} */
             var extraDatesList = [];
+
+            function parseYmdLocal_(s) {
+                var p = String(s || '').split('-').map(Number);
+                if (p.length !== 3 || p.some(function (n) { return !Number.isFinite(n); })) return null;
+                return new Date(p[0], p[1] - 1, p[2]);
+            }
+
+            function formatYmdLocal_(d) {
+                return (
+                    d.getFullYear() +
+                    '-' +
+                    String(d.getMonth() + 1).padStart(2, '0') +
+                    '-' +
+                    String(d.getDate()).padStart(2, '0')
+                );
+            }
+
+            function addDaysLocal_(d, n) {
+                var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                x.setDate(x.getDate() + n);
+                return x;
+            }
+
+            function expandClosedRangeYmds_(startYmd, endYmd) {
+                var a = parseYmdLocal_(startYmd);
+                var b = parseYmdLocal_(endYmd);
+                if (!a || !b) return null;
+                if (b < a) {
+                    var t = startYmd;
+                    startYmd = endYmd;
+                    endYmd = t;
+                    a = parseYmdLocal_(startYmd);
+                    b = parseYmdLocal_(endYmd);
+                }
+                var out = [];
+                var cur = a;
+                var n = 0;
+                while (cur <= b) {
+                    out.push(formatYmdLocal_(cur));
+                    cur = addDaysLocal_(cur, 1);
+                    n++;
+                    if (n > MAX_BLOCK_RANGE_DAYS) return null;
+                }
+                return out;
+            }
+
+            function collapseClosedYmdsToRows_(ymds) {
+                if (!ymds.length) return [];
+                ymds.sort();
+                var rows = [];
+                var runStart = ymds[0];
+                var runPrev = ymds[0];
+                for (var i = 1; i < ymds.length; i++) {
+                    var next = ymds[i];
+                    var dayAfter = formatYmdLocal_(addDaysLocal_(parseYmdLocal_(runPrev), 1));
+                    if (next === dayAfter) {
+                        runPrev = next;
+                    } else {
+                        if (runStart === runPrev) rows.push({ kind: 'closed', ymd: runStart });
+                        else rows.push({ kind: 'closed-range', ymdStart: runStart, ymdEnd: runPrev });
+                        runStart = next;
+                        runPrev = next;
+                    }
+                }
+                if (runStart === runPrev) rows.push({ kind: 'closed', ymd: runStart });
+                else rows.push({ kind: 'closed-range', ymdStart: runStart, ymdEnd: runPrev });
+                return rows;
+            }
 
             function hourOptions(selected) {
                 var opts = '';
@@ -293,6 +379,7 @@
                     }
                 }
                 extraDatesList = [];
+                var closedYmds = [];
                 var ov = data.dateOverrides && typeof data.dateOverrides === 'object' ? data.dateOverrides : {};
                 Object.keys(ov)
                     .sort()
@@ -301,7 +388,7 @@
                         var o = ov[k];
                         if (!o) return;
                         if (o.open === false) {
-                            extraDatesList.push({ ymd: k, kind: 'closed' });
+                            closedYmds.push(k);
                             return;
                         }
                         if (typeof o.start !== 'number' || typeof o.end !== 'number' || o.start >= o.end) return;
@@ -312,6 +399,7 @@
                             end: Math.floor(o.end),
                         });
                     });
+                extraDatesList = extraDatesList.concat(collapseClosedYmdsToRows_(closedYmds));
                 renderExtraDates();
             }
 
@@ -319,13 +407,21 @@
                 extraWrap.querySelectorAll('.extra-date-row').forEach(function (rowEl) {
                     var idx = parseInt(rowEl.getAttribute('data-idx'), 10);
                     if (isNaN(idx) || !extraDatesList[idx]) return;
+                    var row = extraDatesList[idx];
+                    if (row.kind === 'closed-range') {
+                        var ys = rowEl.querySelector('.extra-ymd-start');
+                        var ye = rowEl.querySelector('.extra-ymd-end');
+                        if (ys) row.ymdStart = ys.value;
+                        if (ye) row.ymdEnd = ye.value;
+                        return;
+                    }
                     var ymdIn = rowEl.querySelector('.extra-ymd');
-                    if (ymdIn) extraDatesList[idx].ymd = ymdIn.value;
-                    if (extraDatesList[idx].kind === 'open') {
+                    if (ymdIn) row.ymd = ymdIn.value;
+                    if (row.kind === 'open') {
                         var stIn = rowEl.querySelector('.extra-start');
                         var enIn = rowEl.querySelector('.extra-end');
-                        if (stIn) extraDatesList[idx].start = parseInt(stIn.value, 10);
-                        if (enIn) extraDatesList[idx].end = parseInt(enIn.value, 10);
+                        if (stIn) row.start = parseInt(stIn.value, 10);
+                        if (enIn) row.end = parseInt(enIn.value, 10);
                     }
                 });
             }
@@ -335,7 +431,23 @@
                 extraDatesList.forEach(function (row, idx) {
                     var el = document.createElement('div');
                     el.setAttribute('data-idx', String(idx));
-                    if (row.kind === 'closed') {
+                    if (row.kind === 'closed-range') {
+                        el.className = 'extra-date-row closed-range';
+                        el.innerHTML =
+                            '<div><span class="kind-tag">Closed range — no bookings</span>' +
+                            '<div class="range-fields">' +
+                            '<input type="date" class="extra-ymd-start" value="' +
+                            (row.ymdStart || '') +
+                            '" aria-label="Block from date">' +
+                            '<span class="range-sep">to</span>' +
+                            '<input type="date" class="extra-ymd-end" value="' +
+                            (row.ymdEnd || '') +
+                            '" aria-label="Block through date">' +
+                            '</div></div>' +
+                            '<button type="button" class="btn-rm" data-remove="' +
+                            idx +
+                            '">Remove</button>';
+                    } else if (row.kind === 'closed') {
                         el.className = 'extra-date-row closed';
                         el.innerHTML =
                             '<div><span class="kind-tag">Closed — no bookings</span><input type="date" class="extra-ymd" value="' +
@@ -391,6 +503,18 @@
 
             btnAddBlockDate.addEventListener('click', function () {
                 extraDatesList.push({ ymd: defaultOneOffYmd(), kind: 'closed' });
+                renderExtraDates();
+            });
+
+            btnAddBlockRange.addEventListener('click', function () {
+                var start = defaultOneOffYmd();
+                var endD = parseYmdLocal_(start);
+                if (endD) endD = addDaysLocal_(endD, 6);
+                extraDatesList.push({
+                    kind: 'closed-range',
+                    ymdStart: start,
+                    ymdEnd: endD ? formatYmdLocal_(endD) : start,
+                });
                 renderExtraDates();
             });
 
@@ -464,15 +588,33 @@
                 syncExtraDatesFromDom();
                 var out = {};
                 extraDatesList.forEach(function (r) {
+                    if (r.kind === 'closed-range') {
+                        var ys = String(r.ymdStart || '').trim();
+                        var ye = String(r.ymdEnd || '').trim();
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(ys) || !/^\d{4}-\d{2}-\d{2}$/.test(ye)) {
+                            throw new Error('Each block range needs valid start and end dates.');
+                        }
+                        var expanded = expandClosedRangeYmds_(ys, ye);
+                        if (!expanded || !expanded.length) {
+                            throw new Error('Block range is too long (max ' + MAX_BLOCK_RANGE_DAYS + ' days) or invalid.');
+                        }
+                        expanded.forEach(function (y) {
+                            if (out[y]) throw new Error('The same date is set twice: ' + y + ' (merge block rows).');
+                            out[y] = { open: false };
+                        });
+                        return;
+                    }
                     var y = String(r.ymd || '').trim();
                     if (!/^\d{4}-\d{2}-\d{2}$/.test(y)) return;
                     if (r.kind === 'closed') {
+                        if (out[y]) throw new Error('The same date is set twice: ' + y + ' (merge block rows).');
                         out[y] = { open: false };
                         return;
                     }
                     var st = Math.floor(Number(r.start));
                     var en = Math.floor(Number(r.end));
                     if (isNaN(st) || isNaN(en) || st >= en || st < 0 || en > 23) return;
+                    if (out[y]) throw new Error('The same date is set twice: ' + y);
                     out[y] = { open: true, start: st, end: en };
                 });
                 return out;
@@ -499,17 +641,6 @@
                 if (!anyWeekday && !anyOneOff) {
                     setMsg(false, 'Enable a weekday or add a one-off open/block date.');
                     return;
-                }
-                syncExtraDatesFromDom();
-                var seenYmd = Object.create(null);
-                for (var ei = 0; ei < extraDatesList.length; ei++) {
-                    var ey = String(extraDatesList[ei].ymd || '').trim();
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(ey)) continue;
-                    if (seenYmd[ey]) {
-                        setMsg(false, 'Each one-off date can only appear once (check for duplicates).');
-                        return;
-                    }
-                    seenYmd[ey] = true;
                 }
                 try {
                     if (rememberCb.checked) localStorage.setItem(STORAGE_KEY, secret);
