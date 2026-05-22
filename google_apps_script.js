@@ -2652,6 +2652,124 @@ function sendTwoDayReminders() {
   }
 }
 
+/**
+ * Resend "Appointment Confirmed" email for one booking (sheet row, client email, or calendar eventId).
+ * In Apps Script: edit the CONFIG block below, choose Run → resendConfirmationEmail, check Execution log.
+ * Does not change sheet status or calendar. Set SEND_TO_CLIENT false to preview in studio inbox only.
+ */
+function resendConfirmationEmail() {
+  const CONFIG = {
+    SHEET_ROW: 0,
+    CLIENT_EMAIL: '',
+    EVENT_ID: '',
+    SEND_TO_CLIENT: true,
+  };
+
+  const sheetRow = Math.floor(Number(CONFIG.SHEET_ROW));
+  const emailQ = String(CONFIG.CLIENT_EMAIL || '')
+    .trim()
+    .toLowerCase();
+  const eventIdQ = String(CONFIG.EVENT_ID || '').trim();
+
+  if (sheetRow < 2 && !emailQ && !eventIdQ) {
+    throw new Error('Set CONFIG.SHEET_ROW (≥2), CLIENT_EMAIL, or EVENT_ID before running.');
+  }
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+  const tz = Session.getScriptTimeZone();
+
+  function rowMatches(i) {
+    const st = normalizeSheetStatus_(data[i][7]);
+    if (st !== 'CONFIRMED' && st !== 'CLIENT_CONFIRMED') return false;
+    if (sheetRow >= 2 && i + 1 !== sheetRow) return false;
+    if (emailQ && String(data[i][6] || '').trim().toLowerCase() !== emailQ) return false;
+    if (eventIdQ && String(data[i][8] || '').trim() !== eventIdQ) return false;
+    return true;
+  }
+
+  let hit = -1;
+  if (sheetRow >= 2) {
+    if (sheetRow > data.length) throw new Error('SHEET_ROW ' + sheetRow + ' is past last row (' + data.length + ').');
+    if (!rowMatches(sheetRow - 1)) {
+      const st = normalizeSheetStatus_(data[sheetRow - 1][7]);
+      throw new Error('Row ' + sheetRow + ' status is "' + st + '" — need CONFIRMED or CLIENT_CONFIRMED.');
+    }
+    hit = sheetRow - 1;
+  } else {
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (rowMatches(i)) {
+        hit = i;
+        break;
+      }
+    }
+  }
+
+  if (hit < 0) {
+    throw new Error('No matching CONFIRMED booking. Check email/eventId or use SHEET_ROW.');
+  }
+
+  const clientName = String(data[hit][1] || '').trim() || 'Client';
+  const clientEmail = String(data[hit][6] || '').trim();
+  const service = data[hit][3];
+  const eventId = String(data[hit][8] || '').trim();
+  let neatD;
+  let neatTime;
+  let ev = null;
+  if (eventId) {
+    try {
+      const hintMs = appointmentRowStartMs_(data[hit][4], data[hit][5]);
+      const hint = isNaN(hintMs) ? null : new Date(hintMs);
+      ev = getActiveBookingEvent_(cal, eventId, hint);
+    } catch (evErr) {
+      ev = null;
+    }
+  }
+  if (ev) {
+    const stEv = ev.getStartTime();
+    neatD = Utilities.formatDate(stEv, tz, 'EEEE, MMMM d, yyyy');
+    neatTime = Utilities.formatDate(stEv, tz, 'h:mm a');
+  } else {
+    neatD = formatSheetDateForEmail(data[hit][4]);
+    neatTime = formatSheetTimeForEmail(data[hit][5]);
+  }
+
+  const html = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
+  const subject = "Appointment Confirmed: Roni's Nail Studio";
+
+  if (!CONFIG.SEND_TO_CLIENT) {
+    MailApp.sendEmail({
+      to: MY_EMAIL,
+      subject: 'PREVIEW (resend): ' + subject,
+      htmlBody:
+        '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;"><strong>Preview only.</strong> Would send to: ' +
+        escapeHtml(clientEmail || '(no email on row)') +
+        '</p>' +
+        html,
+    });
+    Logger.log('resendConfirmationEmail: preview sent to ' + MY_EMAIL + ' for sheet row ' + (hit + 1));
+    return;
+  }
+
+  if (!clientEmail) throw new Error('Row ' + (hit + 1) + ' has no client email in column G.');
+  MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: subject, htmlBody: html });
+  Logger.log(
+    'resendConfirmationEmail: sent to ' +
+      clientEmail +
+      ' for row ' +
+      (hit + 1) +
+      ' (' +
+      clientName +
+      ', ' +
+      neatD +
+      ' ' +
+      neatTime +
+      ')'
+  );
+}
+
 function testTwoDayReminderPreview() {
   const html = getTwoDayReminderEmailHtml('Vy (Preview)', 'Monday, April 7, 2026', '2:00 PM', 'Gel Manicure', 'PREVIEW_NO_REAL_EVENT', 'preview_invalid_token');
   MailApp.sendEmail({
