@@ -23,6 +23,7 @@ const BOOKING_ACTION_HTML_BASE = 'https://ronisnailstudio.com/api/booking';
 const RESCHEDULE_PAGE_BASE = 'https://ronisnailstudio.com/reschedule.html';
 const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request.html';
 const OWNER_REJECT_PAGE_BASE = 'https://ronisnailstudio.com/reject-booking.html';
+const STUDIO_ADDRESS = '150 Wood Rd, Braintree, MA, Suite 304-E';
 const SHEET_COL_OWNER_DECLINE_REASON = 16;
 const ARCHIVE_AFTER_PAST_DAYS = 1;
 
@@ -2564,7 +2565,7 @@ function getTwoDayReminderEmailHtml(name, date, time, service, eventId, token) {
   const urlCancel = buildBookingActionUrl(qCancel);
   const urlReschedule = buildRescheduleUrl(eventId, token);
   const rescheduleBlock = urlReschedule ? '<a href="' + urlReschedule + '" style="background-color:#fff;color:#111;border:1px solid #111;padding:12px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Reschedule</a>' : '<p style="font-size:14px;color:#666;">To reschedule, visit our website and book a new appointment time.</p>';
-  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:600;font-size:20px;text-align:center;line-height:1.35;">Please confirm your appointment</h2><p style="font-size:14px;color:#555;text-align:center;margin:8px 0 20px 0;">Your visit is in 2 days -- please let us know of any changes.</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Hi ' + n + ',</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Please tap <strong>Confirm</strong> if you&rsquo;re all set. If you need to change plans, use <strong>Reschedule</strong> or <strong>Cancel</strong>.</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + (emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service)) + '</tbody></table><div style="text-align:center;"><a href="' + urlConfirm + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:600;display:block;margin-bottom:12px;">Confirm</a>' + rescheduleBlock + '<a href="' + urlCancel + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Cancel</a></div><p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>';
+  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:600;font-size:20px;text-align:center;line-height:1.35;">Please confirm your appointment</h2><p style="font-size:14px;color:#555;text-align:center;margin:8px 0 20px 0;">Your visit is in 2 days -- please let us know of any changes.</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Hi ' + n + ',</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Please tap <strong>Confirm</strong> if you&rsquo;re all set. If you need to change plans, use <strong>Reschedule</strong> or <strong>Cancel</strong>.</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + (emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service) + emailDetailRow('Location', STUDIO_ADDRESS)) + '</tbody></table><div style="text-align:center;"><a href="' + urlConfirm + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:600;display:block;margin-bottom:12px;">Confirm</a>' + rescheduleBlock + '<a href="' + urlCancel + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Cancel</a></div><p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>';
 }
 
 function getAlternateProposalClientEmailHtml(name, origDate, origTime, newDate, newTime, service, eventId, modToken) {
@@ -2655,6 +2656,7 @@ function sendTwoDayReminders() {
 /**
  * Resend "Appointment Confirmed" email for one booking (sheet row, client email, or calendar eventId).
  * In Apps Script: edit the CONFIG block below, choose Run → resendConfirmationEmail, check Execution log.
+ * SHEET_ROW = the row number on the left edge of the Bookings tab (not "row 67 of visible list").
  * Does not change sheet status or calendar. Set SEND_TO_CLIENT false to preview in studio inbox only.
  */
 function resendConfirmationEmail() {
@@ -2677,50 +2679,74 @@ function resendConfirmationEmail() {
 
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
   const cal = CalendarApp.getCalendarById(CALENDAR_ID);
   const tz = Session.getScriptTimeZone();
+  const width = Math.max(SHEET_COL_OWNER_DECLINE_REASON, 15);
 
-  function rowMatches(i) {
-    const st = normalizeSheetStatus_(data[i][7]);
+  function readBookingRow_(rowIndex) {
+    if (rowIndex < 2 || rowIndex > lastRow) return null;
+    return sheet.getRange(rowIndex, 1, 1, width).getValues()[0];
+  }
+
+  function rowMatches_(rowIndex, row) {
+    if (!row) return false;
+    const st = normalizeSheetStatus_(row[7]);
     if (st !== 'CONFIRMED' && st !== 'CLIENT_CONFIRMED') return false;
-    if (sheetRow >= 2 && i + 1 !== sheetRow) return false;
-    if (emailQ && String(data[i][6] || '').trim().toLowerCase() !== emailQ) return false;
-    if (eventIdQ && String(data[i][8] || '').trim() !== eventIdQ) return false;
+    if (sheetRow >= 2 && rowIndex !== sheetRow) return false;
+    if (emailQ && String(row[6] || '').trim().toLowerCase() !== emailQ) return false;
+    if (eventIdQ && String(row[8] || '').trim() !== eventIdQ) return false;
     return true;
   }
 
-  let hit = -1;
+  let hitRow = -1;
+  let row = null;
   if (sheetRow >= 2) {
-    if (sheetRow > data.length) throw new Error('SHEET_ROW ' + sheetRow + ' is past last row (' + data.length + ').');
-    if (!rowMatches(sheetRow - 1)) {
-      const st = normalizeSheetStatus_(data[sheetRow - 1][7]);
+    if (sheetRow > lastRow) {
+      throw new Error(
+        'SHEET_ROW ' +
+          sheetRow +
+          ' is past the last row on "' +
+          sheet.getName() +
+          '" (' +
+          lastRow +
+          '). Use the number on the left in that tab (e.g. Stephanie may be 70, not 67).'
+      );
+    }
+    row = readBookingRow_(sheetRow);
+    if (!row || !String(row[1] || '').trim()) {
+      throw new Error('Row ' + sheetRow + ' is empty on the Bookings tab.');
+    }
+    if (!rowMatches_(sheetRow, row)) {
+      const st = normalizeSheetStatus_(row[7]);
       throw new Error('Row ' + sheetRow + ' status is "' + st + '" — need CONFIRMED or CLIENT_CONFIRMED.');
     }
-    hit = sheetRow - 1;
+    hitRow = sheetRow;
   } else {
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (rowMatches(i)) {
-        hit = i;
+    for (let r = lastRow; r >= 2; r--) {
+      const candidate = readBookingRow_(r);
+      if (rowMatches_(r, candidate)) {
+        hitRow = r;
+        row = candidate;
         break;
       }
     }
   }
 
-  if (hit < 0) {
-    throw new Error('No matching CONFIRMED booking. Check email/eventId or use SHEET_ROW.');
+  if (hitRow < 0 || !row) {
+    throw new Error('No matching CONFIRMED booking on "' + sheet.getName() + '". Check email/eventId or SHEET_ROW.');
   }
 
-  const clientName = String(data[hit][1] || '').trim() || 'Client';
-  const clientEmail = String(data[hit][6] || '').trim();
-  const service = data[hit][3];
-  const eventId = String(data[hit][8] || '').trim();
+  const clientName = String(row[1] || '').trim() || 'Client';
+  const clientEmail = String(row[6] || '').trim();
+  const service = row[3];
+  const eventId = String(row[8] || '').trim();
   let neatD;
   let neatTime;
   let ev = null;
   if (eventId) {
     try {
-      const hintMs = appointmentRowStartMs_(data[hit][4], data[hit][5]);
+      const hintMs = appointmentRowStartMs_(row[4], row[5]);
       const hint = isNaN(hintMs) ? null : new Date(hintMs);
       ev = getActiveBookingEvent_(cal, eventId, hint);
     } catch (evErr) {
@@ -2732,8 +2758,8 @@ function resendConfirmationEmail() {
     neatD = Utilities.formatDate(stEv, tz, 'EEEE, MMMM d, yyyy');
     neatTime = Utilities.formatDate(stEv, tz, 'h:mm a');
   } else {
-    neatD = formatSheetDateForEmail(data[hit][4]);
-    neatTime = formatSheetTimeForEmail(data[hit][5]);
+    neatD = formatSheetDateForEmail(row[4]);
+    neatTime = formatSheetTimeForEmail(row[5]);
   }
 
   const html = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
@@ -2749,17 +2775,17 @@ function resendConfirmationEmail() {
         '</p>' +
         html,
     });
-    Logger.log('resendConfirmationEmail: preview sent to ' + MY_EMAIL + ' for sheet row ' + (hit + 1));
+    Logger.log('resendConfirmationEmail: preview sent to ' + MY_EMAIL + ' for sheet row ' + hitRow);
     return;
   }
 
-  if (!clientEmail) throw new Error('Row ' + (hit + 1) + ' has no client email in column G.');
+  if (!clientEmail) throw new Error('Row ' + hitRow + ' has no client email in column G.');
   MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: subject, htmlBody: html });
   Logger.log(
     'resendConfirmationEmail: sent to ' +
       clientEmail +
       ' for row ' +
-      (hit + 1) +
+      hitRow +
       ' (' +
       clientName +
       ', ' +
