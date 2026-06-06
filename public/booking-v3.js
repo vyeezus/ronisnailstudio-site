@@ -686,8 +686,8 @@ function bootBookingPage() {
                 .then(function (data) {
                     if (data && data.recognized) {
                         welcomeBack.textContent = data.lastBooked
-                            ? '💜 Welcome back! We recognize you — last visit ' + data.lastBooked + '.'
-                            : '💜 Welcome back! We recognize you.';
+                            ? 'Welcome back! We recognize you — last visit ' + data.lastBooked + '.'
+                            : 'Welcome back! We recognize you.';
                         welcomeBack.style.display = 'block';
                     } else {
                         welcomeBack.style.display = 'none';
