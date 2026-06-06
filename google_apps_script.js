@@ -2235,9 +2235,10 @@ function handlePublicClientLookup_(d) {
   const want = Object.create(null);
   for (let i = 0; i < inputKeys.length; i++) want[inputKeys[i]] = true;
 
-  let recognized = false;
-  let visits = 0;
-  let lastMs = 0;
+  const nowMs = Date.now();
+  let recognized = false;   // any prior booking on file (so we can link them)
+  let visits = 0;           // appointments they actually kept (past + confirmed)
+  let lastVisitMs = 0;      // most recent kept appointment
   const sheets = getBookingSheetsForLookup_();
   for (let s = 0; s < sheets.length; s++) {
     const data = sheets[s].getDataRange().getValues();
@@ -2247,17 +2248,24 @@ function handlePublicClientLookup_(d) {
       for (let k = 0; k < rowKeys.length; k++) { if (want[rowKeys[k]]) { hit = true; break; } }
       if (!hit) continue;
       recognized = true;
-      visits++;
-      const ts = data[i][0];
-      let tsMs = (ts instanceof Date && !isNaN(ts.getTime())) ? ts.getTime() : appointmentRowStartMs_(data[i][4], data[i][5]);
-      if (!isNaN(tsMs) && tsMs > lastMs) lastMs = tsMs;
+      // "Last visit" must be an appointment they actually KEPT: confirmed AND
+      // already in the past. A cancelled / rejected / declined / still-upcoming
+      // booking is never a "last visit" (a cancelled appt is not a visit).
+      const status = normalizeSheetStatus_(data[i][7]);
+      if (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED') {
+        const apptMs = appointmentRowStartMs_(data[i][4], data[i][5]); // appt START, not booking-created date
+        if (!isNaN(apptMs) && apptMs <= nowMs) {
+          visits++;
+          if (apptMs > lastVisitMs) lastVisitMs = apptMs;
+        }
+      }
     }
   }
   return jsonResponse_({
     status: 'success',
     recognized: recognized,
     visits: visits,
-    lastBooked: lastMs ? Utilities.formatDate(new Date(lastMs), Session.getScriptTimeZone(), 'MMM d, yyyy') : '',
+    lastBooked: lastVisitMs ? Utilities.formatDate(new Date(lastVisitMs), Session.getScriptTimeZone(), 'MMM d, yyyy') : '',
   });
 }
 
