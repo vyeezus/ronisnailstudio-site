@@ -1908,6 +1908,9 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
     }
+    if (isJsonBoolTrue_(d.lookupClient)) {
+      return handlePublicClientLookup_(d);
+    }
     if (isJsonBoolTrue_(d.ownerLookupClient)) {
       return handleOwnerClientLookup(d);
     }
@@ -2215,6 +2218,47 @@ function getBookingSheetsForLookup_() {
   const arch = ss.getSheetByName(ARCHIVE_SHEET_NAME);
   if (arch) sheets.push(arch);
   return sheets;
+}
+
+/**
+ * Public "do we recognize this client?" lookup for the booking form. Matches a
+ * returning client by phone OR email against current + archived bookings.
+ * Privacy-safe: returns ONLY whether we recognize them (plus visit count /
+ * last visit) — never echoes a name, phone, or email back, so it can't be used
+ * to harvest who's a client.
+ */
+function handlePublicClientLookup_(d) {
+  const inputKeys = ownerLookupDedupeKeys_(d.email, d.phone);
+  if (inputKeys.length === 0) {
+    return jsonResponse_({ status: 'success', recognized: false });
+  }
+  const want = Object.create(null);
+  for (let i = 0; i < inputKeys.length; i++) want[inputKeys[i]] = true;
+
+  let recognized = false;
+  let visits = 0;
+  let lastMs = 0;
+  const sheets = getBookingSheetsForLookup_();
+  for (let s = 0; s < sheets.length; s++) {
+    const data = sheets[s].getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const rowKeys = ownerLookupDedupeKeys_(data[i][6], data[i][2]); // email col 6, phone col 2
+      let hit = false;
+      for (let k = 0; k < rowKeys.length; k++) { if (want[rowKeys[k]]) { hit = true; break; } }
+      if (!hit) continue;
+      recognized = true;
+      visits++;
+      const ts = data[i][0];
+      let tsMs = (ts instanceof Date && !isNaN(ts.getTime())) ? ts.getTime() : appointmentRowStartMs_(data[i][4], data[i][5]);
+      if (!isNaN(tsMs) && tsMs > lastMs) lastMs = tsMs;
+    }
+  }
+  return jsonResponse_({
+    status: 'success',
+    recognized: recognized,
+    visits: visits,
+    lastBooked: lastMs ? Utilities.formatDate(new Date(lastMs), Session.getScriptTimeZone(), 'MMM d, yyyy') : '',
+  });
 }
 
 function handleOwnerClientLookup(d) {
@@ -2599,7 +2643,17 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
 /**
  * 2-day reminder: use calendar start for "is it 2 days away?" AND for the email body.
  * Sheet columns E/F can lag after you move an event in Google Calendar (stale Tuesday in email, Monday on calendar).
+ *
+ * The "already sent" flag in column K stores the exact appointment time the reminder
+ * was sent for (e.g. "SENT:2026-06-05T09:00"), not a bare "SENT". That way, if an
+ * appointment is rescheduled AFTER its reminder already went out, the stored time no
+ * longer matches the calendar, so a fresh, correctly-dated reminder is sent when the
+ * new date is 2 days away. This no longer depends on the calendar sync clearing the flag.
  */
+function reminderSentKeyForStart_(start, tz) {
+  return 'SENT:' + Utilities.formatDate(start, tz, "yyyy-MM-dd'T'HH:mm");
+}
+
 function sendTwoDayReminders() {
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
@@ -2611,7 +2665,6 @@ function sendTwoDayReminders() {
   for (let i = 1; i < data.length; i++) {
     const status = normalizeSheetStatus_(data[i][7]);
     if (status !== 'CONFIRMED' && status !== 'CLIENT_CONFIRMED') continue;
-    if (data[i][10] === 'SENT') continue;
     const eventId = data[i][8];
     const tok = data[i][9];
     if (!eventId || !tok) continue;
@@ -2628,6 +2681,10 @@ function sendTwoDayReminders() {
     const apptDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const daysUntil = Math.round((apptDay - todayStart) / 86400000);
     if (daysUntil !== 2) continue;
+    // Skip only if a reminder was already sent for THIS appointment time. If the
+    // appointment was rescheduled since, the stored key won't match and we re-send.
+    const reminderKey = reminderSentKeyForStart_(start, tz);
+    if (String(data[i][10] || '').trim() === reminderKey) continue;
     const clientName = data[i][1];
     const service = data[i][3];
     const clientEmail = data[i][6];
@@ -2648,7 +2705,7 @@ function sendTwoDayReminders() {
     }
     const html = getTwoDayReminderEmailHtml(clientName, neatD, neatTime, service, eventId, tok);
     MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: TWO_DAY_REMINDER_EMAIL_SUBJECT, htmlBody: html });
-    sheet.getRange(i + 1, 11).setValue('SENT');
+    sheet.getRange(i + 1, 11).setValue(reminderKey);
     SpreadsheetApp.flush();
   }
 }

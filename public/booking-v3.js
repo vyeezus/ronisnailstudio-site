@@ -245,6 +245,8 @@ function bootBookingPage() {
     const nameInput = document.getElementById('cust-name');
     const phoneInput = document.getElementById('cust-phone');
     const emailInput = document.getElementById('cust-email');
+    const nameHint = document.getElementById('name-hint');
+    const welcomeBack = document.getElementById('welcome-back');
     const notesInput = document.getElementById('cust-notes');
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -626,12 +628,23 @@ function bootBookingPage() {
         updateConfirmBtn();
     }
 
+    // A real booking needs a first AND last name, with the last name at least 2
+    // letters (so "Jane" or "Jane D" aren't accepted, but "Jane Doe" is).
+    function hasFirstAndLastName(full) {
+        const parts = String(full).trim().split(/\s+/).filter(Boolean);
+        return parts.length >= 2 && parts[parts.length - 1].length >= 2;
+    }
+
     function updateConfirmBtn() {
         if (confirmBtn.classList.contains('is-submitting')) return;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         const phoneRegex = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/im;
 
-        const isNameValid = nameInput.value.trim().length > 0;
+        // Reschedule keeps the original behavior (no name re-entry); only the
+        // public booking flow enforces the first + last name requirement.
+        const nameVal = nameInput.value.trim();
+        const isNameValid = isReschedule ? nameVal.length > 0 : hasFirstAndLastName(nameVal);
+        if (nameHint) nameHint.style.display = (!isReschedule && nameVal.length > 0 && !isNameValid) ? 'block' : 'none';
         const isEmailValid = emailRegex.test(emailInput.value.trim());
         const phoneVal = phoneInput.value.trim();
         const isPhoneValid = isReschedule
@@ -645,11 +658,53 @@ function bootBookingPage() {
     phoneInput.addEventListener('input', updateConfirmBtn);
     emailInput.addEventListener('input', updateConfirmBtn);
 
+    // "Welcome back" recognition: once a valid phone or email is entered, quietly
+    // ask the backend whether we've seen this client before (matched by phone OR
+    // email). Privacy-safe — the backend returns only a yes/no + last visit, no
+    // personal info — and we never auto-fill their name. Just a friendly nod that
+    // keeps their booking tied to their existing history instead of a new record.
+    let recognizeTimer = null;
+    let lastRecognizeKey = '';
+    function maybeRecognizeClient() {
+        if (isReschedule || !welcomeBack) return;
+        const phone = phoneInput.value.trim();
+        const email = emailInput.value.trim();
+        const phoneDigits = phone.replace(/\D/g, '');
+        const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (phoneDigits.length < 10 && !emailOk) { welcomeBack.style.display = 'none'; lastRecognizeKey = ''; return; }
+        const key = phoneDigits + '|' + (emailOk ? email.toLowerCase() : '');
+        if (key === lastRecognizeKey) return; // already looked this exact pair up
+        clearTimeout(recognizeTimer);
+        recognizeTimer = setTimeout(function () {
+            lastRecognizeKey = key;
+            fetch(SCRIPT_PROXY, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lookupClient: true, phone: phone, email: email }),
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && data.recognized) {
+                        welcomeBack.textContent = data.lastBooked
+                            ? '💜 Welcome back! We recognize you — last visit ' + data.lastBooked + '.'
+                            : '💜 Welcome back! We recognize you.';
+                        welcomeBack.style.display = 'block';
+                    } else {
+                        welcomeBack.style.display = 'none';
+                    }
+                })
+                .catch(function () { lastRecognizeKey = ''; /* recognition is a nicety — fail silently */ });
+        }, 600);
+    }
+    phoneInput.addEventListener('input', maybeRecognizeClient);
+    emailInput.addEventListener('input', maybeRecognizeClient);
+
     let bookingSubmitInFlight = false;
 
     confirmBtn.addEventListener('click', async () => {
         if (bookingSubmitInFlight) return;
         if (!selectedSlot || !nameInput.value.trim()) return;
+        if (!isReschedule && !hasFirstAndLastName(nameInput.value)) { if (nameHint) nameHint.style.display = 'block'; return; }
 
         bookingSubmitInFlight = true;
         const originalBtnText = confirmBtn.innerHTML;

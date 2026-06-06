@@ -552,7 +552,8 @@
                 <div class="customer-form">
                     <div class="form-field">
                         <label>Full Name *</label>
-                        <input type="text" id="cust-name" placeholder="Jane Doe" required>
+                        <input type="text" id="cust-name" placeholder="First and last name" required>
+                        <div id="name-hint" style="display:none; font-size:0.8rem; color:var(--text-accent); margin-top:0.35rem; letter-spacing:0;">Please enter your first and last name (last name at least 2 letters).</div>
                     </div>
                     <div class="form-field">
                         <label>Phone</label>
@@ -562,6 +563,7 @@
                         <label>Email</label>
                         <input type="email" id="cust-email" placeholder="jane@email.com">
                     </div>
+                    <div id="welcome-back" role="status" style="display:none; font-size:0.85rem; color:var(--text-accent); background:rgba(178,115,154,0.08); border:1px solid rgba(178,115,154,0.25); border-radius:8px; padding:0.6rem 0.8rem; margin-top:0.25rem; letter-spacing:0;"></div>
                     <div class="form-field" id="client-notes-field">
                         <label>Additional notes or requests <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);">(optional)</span></label>
                         <textarea id="cust-notes" maxlength="2000" rows="4" placeholder="Allergies, shape preferences, timing constraints, etc." autocomplete="off"></textarea>
