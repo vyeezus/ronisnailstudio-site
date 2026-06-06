@@ -1435,6 +1435,89 @@ function handleOwnerRejectBooking(d) {
   return jsonResponse_({ status: 'success' });
 }
 
+/**
+ * Cancel a confirmed booking from the Admin phone app (ownerCancelBooking).
+ * Authorized by the admin secret (the app doesn't carry a per-booking token for
+ * cancel). Deletes the calendar event, marks the row CANCELLED, clears the
+ * 2-day reminder flag, and emails the client a cancellation notice — but only
+ * for an UPCOMING appointment, so cleaning up an already-past row never emails.
+ */
+function handleOwnerCancelBooking(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const eventId = String(d.eventId || '').trim();
+  if (!eventId) {
+    return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  }
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const rowIndex = findBookingRowIndexByEventId_(sheet, eventId);
+  if (rowIndex < 0) {
+    return jsonResponse_({ status: 'error', message: 'not_found' });
+  }
+  const snapshot = getBookingRowSnapshot_(sheet, rowIndex);
+  if (!snapshot) {
+    return jsonResponse_({ status: 'error', message: 'not_found' });
+  }
+  if (snapshot.rowStatus === 'CANCELLED' || snapshot.rowStatus === 'REJECTED') {
+    return jsonResponse_({ status: 'success', warning: 'already_cancelled' });
+  }
+
+  const clientName = String(snapshot.clientName || '').trim() || 'Client';
+  const clientEmail = String(snapshot.clientEmail || '').trim();
+  const service = snapshot.service;
+  const dateVal = snapshot.dateVal;
+  const timeStr = snapshot.timeStr;
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    markInternalCalendarMutation_();
+    let ev = null;
+    try { ev = cal.getEventById(currentEventId); } catch (e) { ev = null; }
+    if (ev) {
+      try { ev.deleteEvent(); } catch (delErr) { Logger.log('owner cancel: could not delete calendar event: ' + delErr); }
+    }
+    sheet.getRange(rowIndex, 8).setValue('CANCELLED');
+    sheet.getRange(rowIndex, 11).setValue(''); // clear any 2-day reminder flag
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  clearBookingEndpointCaches_();
+
+  let warning = '';
+  if (clientEmail) {
+    const apptMs = appointmentRowStartMs_(dateVal, timeStr);
+    const isUpcoming = isNaN(apptMs) ? true : apptMs > Date.now();
+    if (isUpcoming) {
+      try {
+        const neatD = formatSheetDateForEmail(dateVal);
+        const neatTime = formatSheetTimeForEmail(timeStr);
+        const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
+        MailApp.sendEmail({
+          to: clientEmail,
+          name: "Roni's Nail Studio",
+          subject: "Appointment Cancelled: Roni's Nail Studio",
+          htmlBody: html,
+        });
+      } catch (mailErr) {
+        warning = 'email_failed';
+        Logger.log('owner cancel: cancellation email failed: ' + mailErr);
+      }
+    }
+  }
+
+  return jsonResponse_({ status: 'success', warning: warning });
+}
+
 function handleReschedulePost(d) {
   if (!d.eventId || !d.token || !d.date || !d.time) {
     return jsonResponse_({ status: 'error', message: 'missing_fields' });
@@ -1925,6 +2008,9 @@ function doPost(e) {
     }
     if (isJsonBoolTrue_(d.ownerRejectBooking)) {
       return handleOwnerRejectBooking(d);
+    }
+    if (isJsonBoolTrue_(d.ownerCancelBooking)) {
+      return handleOwnerCancelBooking(d);
     }
     if (isJsonBoolTrue_(d.reschedule)) {
       return handleReschedulePost(d);
