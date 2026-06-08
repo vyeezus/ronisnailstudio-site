@@ -560,6 +560,7 @@ function buildPublicBusyArray_(ignoreEventId) {
     if (!cal) return;
     cal.getEvents(now, rangeEnd).forEach(function (v) {
       if (ignore && String(v.getId()) === ignore) return;
+      if (v.isAllDayEvent()) return; // all-day reminders/holidays don't block bookings (greys out the whole day otherwise)
       allBusy.push({
         start: v.getStartTime().toISOString(),
         end: v.getEndTime().toISOString(),
@@ -3587,6 +3588,7 @@ function slotOverlapsExistingCalendarEvents_(slotStart, slotEnd, ignoreEventIds)
       for (var j = 0; j < evs.length; j++) {
         const ev = evs[j];
         if (skip[String(ev.getId())]) continue;
+        if (ev.isAllDayEvent()) continue; // all-day reminders/holidays must NOT block timed appointments (use the hours "block date" tool for real days off)
         const es = ev.getStartTime();
         const ee = ev.getEndTime();
         if (es < slotEnd && ee > slotStart) return true;
