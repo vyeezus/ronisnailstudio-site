@@ -1435,89 +1435,6 @@ function handleOwnerRejectBooking(d) {
   return jsonResponse_({ status: 'success' });
 }
 
-/**
- * Cancel a confirmed booking from the Admin phone app (ownerCancelBooking).
- * Authorized by the admin secret (the app doesn't carry a per-booking token for
- * cancel). Deletes the calendar event, marks the row CANCELLED, clears the
- * 2-day reminder flag, and emails the client a cancellation notice — but only
- * for an UPCOMING appointment, so cleaning up an already-past row never emails.
- */
-function handleOwnerCancelBooking(d) {
-  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
-  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
-    return jsonResponse_({ status: 'error', message: 'unauthorized' });
-  }
-  const eventId = String(d.eventId || '').trim();
-  if (!eventId) {
-    return jsonResponse_({ status: 'error', message: 'missing_fields' });
-  }
-
-  const ss = getCRMSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
-  const rowIndex = findBookingRowIndexByEventId_(sheet, eventId);
-  if (rowIndex < 0) {
-    return jsonResponse_({ status: 'error', message: 'not_found' });
-  }
-  const snapshot = getBookingRowSnapshot_(sheet, rowIndex);
-  if (!snapshot) {
-    return jsonResponse_({ status: 'error', message: 'not_found' });
-  }
-  if (snapshot.rowStatus === 'CANCELLED' || snapshot.rowStatus === 'REJECTED') {
-    return jsonResponse_({ status: 'success', warning: 'already_cancelled' });
-  }
-
-  const clientName = String(snapshot.clientName || '').trim() || 'Client';
-  const clientEmail = String(snapshot.clientEmail || '').trim();
-  const service = snapshot.service;
-  const dateVal = snapshot.dateVal;
-  const timeStr = snapshot.timeStr;
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
-    return jsonResponse_({ status: 'error', message: 'server_busy' });
-  }
-  try {
-    const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    markInternalCalendarMutation_();
-    let ev = null;
-    try { ev = cal.getEventById(currentEventId); } catch (e) { ev = null; }
-    if (ev) {
-      try { ev.deleteEvent(); } catch (delErr) { Logger.log('owner cancel: could not delete calendar event: ' + delErr); }
-    }
-    sheet.getRange(rowIndex, 8).setValue('CANCELLED');
-    sheet.getRange(rowIndex, 11).setValue(''); // clear any 2-day reminder flag
-    SpreadsheetApp.flush();
-  } finally {
-    lock.releaseLock();
-  }
-  clearBookingEndpointCaches_();
-
-  let warning = '';
-  if (clientEmail) {
-    const apptMs = appointmentRowStartMs_(dateVal, timeStr);
-    const isUpcoming = isNaN(apptMs) ? true : apptMs > Date.now();
-    if (isUpcoming) {
-      try {
-        const neatD = formatSheetDateForEmail(dateVal);
-        const neatTime = formatSheetTimeForEmail(timeStr);
-        const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
-        MailApp.sendEmail({
-          to: clientEmail,
-          name: "Roni's Nail Studio",
-          subject: "Appointment Cancelled: Roni's Nail Studio",
-          htmlBody: html,
-        });
-      } catch (mailErr) {
-        warning = 'email_failed';
-        Logger.log('owner cancel: cancellation email failed: ' + mailErr);
-      }
-    }
-  }
-
-  return jsonResponse_({ status: 'success', warning: warning });
-}
-
 function handleReschedulePost(d) {
   if (!d.eventId || !d.token || !d.date || !d.time) {
     return jsonResponse_({ status: 'error', message: 'missing_fields' });
@@ -1985,14 +1902,29 @@ function doGet(e) {
 function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
+    if (isJsonBoolTrue_(d.lookupClient)) {
+      return handlePublicClientLookup_(d);
+    }
     if (isJsonBoolTrue_(d.ownerCalendarWeek)) {
       return handleOwnerCalendarWeek(d);
     }
+    if (isJsonBoolTrue_(d.ownerListBookings)) {
+      return handleOwnerListBookings(d);
+    }
+    if (isJsonBoolTrue_(d.ownerRegisterPushToken)) {
+      return handleOwnerRegisterPushToken(d);
+    }
+    if (isJsonBoolTrue_(d.ownerCancelBooking)) {
+      return handleOwnerCancelBooking(d);
+    }
+    if (isJsonBoolTrue_(d.ownerRescheduleBooking)) {
+      return handleOwnerRescheduleBooking(d);
+    }
+    if (isJsonBoolTrue_(d.ownerUpdateBooking)) {
+      return handleOwnerUpdateBooking(d);
+    }
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
-    }
-    if (isJsonBoolTrue_(d.lookupClient)) {
-      return handlePublicClientLookup_(d);
     }
     if (isJsonBoolTrue_(d.ownerLookupClient)) {
       return handleOwnerClientLookup(d);
@@ -2008,9 +1940,6 @@ function doPost(e) {
     }
     if (isJsonBoolTrue_(d.ownerRejectBooking)) {
       return handleOwnerRejectBooking(d);
-    }
-    if (isJsonBoolTrue_(d.ownerCancelBooking)) {
-      return handleOwnerCancelBooking(d);
     }
     if (isJsonBoolTrue_(d.reschedule)) {
       return handleReschedulePost(d);
@@ -2308,10 +2237,11 @@ function getBookingSheetsForLookup_() {
 
 /**
  * Public "do we recognize this client?" lookup for the booking form. Matches a
- * returning client by phone OR email against current + archived bookings.
- * Privacy-safe: returns ONLY whether we recognize them (plus visit count /
- * last visit) — never echoes a name, phone, or email back, so it can't be used
- * to harvest who's a client.
+ * returning client by phone OR email across current + archived bookings.
+ * Privacy-safe: returns ONLY whether we recognize them (plus visit count / last
+ * visit) — never echoes a name, phone, or email back. "Last visit" only counts
+ * an appointment they actually KEPT (confirmed AND in the past) — never a
+ * cancelled/rejected/declined or still-upcoming booking.
  */
 function handlePublicClientLookup_(d) {
   const inputKeys = ownerLookupDedupeKeys_(d.email, d.phone);
@@ -2322,9 +2252,9 @@ function handlePublicClientLookup_(d) {
   for (let i = 0; i < inputKeys.length; i++) want[inputKeys[i]] = true;
 
   const nowMs = Date.now();
-  let recognized = false;   // any prior booking on file (so we can link them)
-  let visits = 0;           // appointments they actually kept (past + confirmed)
-  let lastVisitMs = 0;      // most recent kept appointment
+  let recognized = false;
+  let visits = 0;
+  let lastVisitMs = 0;
   const sheets = getBookingSheetsForLookup_();
   for (let s = 0; s < sheets.length; s++) {
     const data = sheets[s].getDataRange().getValues();
@@ -2334,12 +2264,9 @@ function handlePublicClientLookup_(d) {
       for (let k = 0; k < rowKeys.length; k++) { if (want[rowKeys[k]]) { hit = true; break; } }
       if (!hit) continue;
       recognized = true;
-      // "Last visit" must be an appointment they actually KEPT: confirmed AND
-      // already in the past. A cancelled / rejected / declined / still-upcoming
-      // booking is never a "last visit" (a cancelled appt is not a visit).
       const status = normalizeSheetStatus_(data[i][7]);
       if (status === 'CONFIRMED' || status === 'CLIENT_CONFIRMED') {
-        const apptMs = appointmentRowStartMs_(data[i][4], data[i][5]); // appt START, not booking-created date
+        const apptMs = appointmentRowStartMs_(data[i][4], data[i][5]);
         if (!isNaN(apptMs) && apptMs <= nowMs) {
           visits++;
           if (apptMs > lastVisitMs) lastVisitMs = apptMs;
@@ -2386,30 +2313,75 @@ function handleOwnerClientLookup(d) {
     }
   });
 
-  rows.sort(function (a, b) { return b.tsMs - a.tsMs; });
-  const seen = Object.create(null);
-  const matches = [];
-  for (let i = 0; i < rows.length; i++) {
-    const item = rows[i];
-    const keys = ownerLookupDedupeKeys_(item.email, item.phone);
-    if (keys.length === 0) continue;
-    let duplicate = false;
-    for (let k = 0; k < keys.length; k++) {
-      if (seen[keys[k]]) {
-        duplicate = true;
-        break;
-      }
+  // Group rows that share ANY contact key (email or phone) so the same person
+  // entered under different names ("Vy", "Vy Be", "Vy Nguyen") collapses into one
+  // result. Union-find merges transitive matches (A shares email with B, B shares
+  // phone with C => all one person) regardless of row order.
+  const parent = Object.create(null);
+  function findRoot_(x) {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
     }
-    if (duplicate) continue;
-    for (let k = 0; k < keys.length; k++) seen[keys[k]] = true;
-    matches.push({
-      name: item.name,
-      phone: item.phone,
-      email: item.email,
-      lastBooked: item.tsMs ? Utilities.formatDate(new Date(item.tsMs), Session.getScriptTimeZone(), 'MMM d, yyyy') : '',
-    });
-    if (matches.length >= 15) break;
+    return x;
   }
+  function unionKeys_(a, b) {
+    parent[findRoot_(a)] = findRoot_(b);
+  }
+
+  const candidates = [];
+  for (let i = 0; i < rows.length; i++) {
+    const keys = ownerLookupDedupeKeys_(rows[i].email, rows[i].phone);
+    if (keys.length === 0) continue; // no email/phone to merge or book on
+    for (let k = 0; k < keys.length; k++) if (parent[keys[k]] === undefined) parent[keys[k]] = keys[k];
+    for (let k = 1; k < keys.length; k++) unionKeys_(keys[0], keys[k]);
+    candidates.push({ row: rows[i], keys: keys });
+  }
+
+  const groups = Object.create(null);
+  for (let i = 0; i < candidates.length; i++) {
+    const root = findRoot_(candidates[i].keys[0]);
+    (groups[root] = groups[root] || []).push(candidates[i].row);
+  }
+
+  const merged = Object.keys(groups).map(function (root) {
+    const g = groups[root].slice().sort(function (a, b) { return b.tsMs - a.tsMs; });
+    // Canonical name = the one used on the MOST bookings; ties break toward the
+    // most recent (g is sorted newest-first). So someone with two "Vy Be"
+    // bookings and one "Vy" / one archived "Vy Nguyen" shows as "Vy Be".
+    const counts = Object.create(null);
+    for (let j = 0; j < g.length; j++) {
+      const rn = String(g[j].name || '').trim();
+      if (rn) counts[rn] = (counts[rn] || 0) + 1;
+    }
+    let name = '';
+    let bestCount = 0;
+    let phone = '';
+    let email = '';
+    let tsMs = 0;
+    for (let j = 0; j < g.length; j++) {
+      const r = g[j];
+      const rn = String(r.name || '').trim();
+      if (rn && counts[rn] > bestCount) {
+        bestCount = counts[rn];
+        name = rn;
+      }
+      if (!phone && r.phone) phone = r.phone;
+      if (!email && r.email) email = r.email;
+      if (r.tsMs > tsMs) tsMs = r.tsMs;
+    }
+    return { name: name, phone: phone, email: email, tsMs: tsMs };
+  });
+
+  merged.sort(function (a, b) { return b.tsMs - a.tsMs; });
+  const matches = merged.slice(0, 15).map(function (m) {
+    return {
+      name: m.name,
+      phone: m.phone,
+      email: m.email,
+      lastBooked: m.tsMs ? Utilities.formatDate(new Date(m.tsMs), Session.getScriptTimeZone(), 'MMM d, yyyy') : '',
+    };
+  });
   return jsonResponse_({ status: 'success', matches: matches });
 }
 
@@ -2630,6 +2602,510 @@ function buildWeekDaysPayload_(weekStart, tz) {
   return days;
 }
 
+/**
+ * --- Admin app push notifications ---
+ * Owner devices register an Expo push token (stored in Script Properties). A
+ * time-based trigger (checkNewBookingsAndPush) polls for new PENDING bookings
+ * and sends a push. Polling is used because new public bookings are handled by
+ * the website's separate Apps Script deployment, which this code can't hook
+ * into directly — but a time trigger runs the latest project code regardless.
+ */
+var PROP_PUSH_TOKENS = 'OWNER_PUSH_TOKENS';
+var PROP_PUSH_NOTIFIED = 'PUSH_NOTIFIED_TOKENS';
+
+function handleOwnerRegisterPushToken(d) {
+  var secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  var token = String(d.pushToken || '').trim();
+  // Expo push tokens come as "ExponentPushToken[...]" (classic) or
+  // "ExpoPushToken[...]" (newer). Accept either.
+  if (!token || !/^Expo(nent)?PushToken\[/.test(token)) {
+    return jsonResponse_({ status: 'error', message: 'bad_token' });
+  }
+  var props = PropertiesService.getScriptProperties();
+  var tokens = [];
+  try {
+    var raw = props.getProperty(PROP_PUSH_TOKENS);
+    tokens = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    tokens = [];
+  }
+  if (tokens.indexOf(token) < 0) tokens.push(token);
+  if (tokens.length > 10) tokens = tokens.slice(tokens.length - 10);
+  props.setProperty(PROP_PUSH_TOKENS, JSON.stringify(tokens));
+  return jsonResponse_({ status: 'success' });
+}
+
+function sendExpoPush_(tokens, title, body, data) {
+  if (!tokens || !tokens.length) return;
+  var messages = tokens.map(function (t) {
+    return { to: t, title: title, body: body, sound: 'default', priority: 'high', data: data || {} };
+  });
+  try {
+    UrlFetchApp.fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { Accept: 'application/json' },
+      payload: JSON.stringify(messages),
+    });
+  } catch (err) {
+    Logger.log('sendExpoPush_ error: ' + err);
+  }
+}
+
+function capArray_(arr, max) {
+  return arr.length > max ? arr.slice(arr.length - max) : arr;
+}
+
+/**
+ * Polled by a time trigger. Sends a push for each new PENDING booking that
+ * hasn't been notified yet (deduped by the row's action token). On the very
+ * first run after a device registers, it seeds the "already notified" set
+ * WITHOUT pushing, so the owner isn't blasted for pre-existing requests.
+ */
+function checkNewBookingsAndPush() {
+  var props = PropertiesService.getScriptProperties();
+  var tokens = [];
+  try {
+    var traw = props.getProperty(PROP_PUSH_TOKENS);
+    tokens = traw ? JSON.parse(traw) : [];
+  } catch (e) {
+    tokens = [];
+  }
+  if (!tokens.length) return;
+
+  var ss = getCRMSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  var data = sheet.getDataRange().getValues();
+
+  var notifiedRaw = props.getProperty(PROP_PUSH_NOTIFIED);
+  var firstRun = notifiedRaw === null || notifiedRaw === undefined;
+  var notified = [];
+  try {
+    notified = notifiedRaw ? JSON.parse(notifiedRaw) : [];
+  } catch (e) {
+    notified = [];
+  }
+  var seen = {};
+  for (var n = 0; n < notified.length; n++) seen[notified[n]] = true;
+
+  var fresh = [];
+  for (var i = 1; i < data.length; i++) {
+    if (normalizeSheetStatus_(data[i][7]) !== 'PENDING') continue;
+    var tok = String(data[i][9] || '').trim();
+    if (!tok || seen[tok]) continue;
+    fresh.push({
+      tok: tok,
+      name: String(data[i][1] || '').trim() || 'Someone',
+      dateLabel: formatSheetDateForEmail(data[i][4]),
+      timeLabel: formatSheetTimeForEmail(data[i][5]),
+    });
+  }
+
+  if (firstRun) {
+    for (var s = 0; s < fresh.length; s++) notified.push(fresh[s].tok);
+    props.setProperty(PROP_PUSH_NOTIFIED, JSON.stringify(capArray_(notified, 500)));
+    return;
+  }
+
+  for (var k = 0; k < fresh.length; k++) {
+    var b = fresh[k];
+    sendExpoPush_(tokens, 'New booking request', b.name + ' — ' + b.dateLabel + ' at ' + b.timeLabel, { type: 'pending' });
+    notified.push(b.tok);
+  }
+  if (fresh.length) {
+    props.setProperty(PROP_PUSH_NOTIFIED, JSON.stringify(capArray_(notified, 500)));
+  }
+}
+
+function installPushPollingTrigger() {
+  var fn = 'checkNewBookingsAndPush';
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === fn) {
+      Logger.log('Push polling trigger already installed.');
+      return;
+    }
+  }
+  ScriptApp.newTrigger(fn).timeBased().everyMinutes(5).create();
+  Logger.log('Installed push polling trigger (every 5 minutes).');
+}
+
+/** Manual helper: send a test push to all registered devices. */
+function sendTestPush() {
+  var props = PropertiesService.getScriptProperties();
+  var tokens = [];
+  try {
+    var raw = props.getProperty(PROP_PUSH_TOKENS);
+    tokens = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    tokens = [];
+  }
+  Logger.log('Registered push tokens: ' + tokens.length);
+  sendExpoPush_(tokens, 'Test alert', 'Push notifications are working 🎉', { type: 'pending' });
+}
+
+/**
+ * Owner cancel (admin app). Cancels a booking in any active state
+ * (CONFIRMED / CLIENT_CONFIRMED / PENDING / MOD_PROPOSED): deletes the calendar
+ * event, marks the row CANCELLED, and emails the client the SAME cancellation
+ * email the website's sync flow sends. Admin-secret gated; additive (does not
+ * touch any existing handler).
+ */
+function handleOwnerCancelBooking(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const eventId = String(d.eventId || '').trim();
+  if (!eventId) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  let clientName = '';
+  let clientEmail = '';
+  let service = '';
+  let dateVal = '';
+  let timeStr = '';
+  let rowStatus = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][8]) !== eventId) continue;
+    rowIndex = i + 1;
+    clientName = data[i][1];
+    service = data[i][3];
+    dateVal = data[i][4];
+    timeStr = data[i][5];
+    clientEmail = data[i][6];
+    rowStatus = normalizeSheetStatus_(data[i][7]);
+    break;
+  }
+  if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'not_found' });
+  if (rowStatus === 'CANCELLED' || rowStatus === 'REJECTED') {
+    return jsonResponse_({ status: 'success', alreadyCancelled: true });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    let ev = null;
+    try {
+      ev = cal.getEventById(currentEventId);
+    } catch (e) {
+      ev = null;
+    }
+    if (ev) {
+      markInternalCalendarMutation_();
+      ev.deleteEvent();
+    }
+    sheet.getRange(rowIndex, 8).setValue('CANCELLED');
+    sheet.getRange(rowIndex, 11).setValue('');
+    SpreadsheetApp.flush();
+    clearBookingEndpointCaches_();
+  } finally {
+    lock.releaseLock();
+  }
+
+  const neatD = formatSheetDateForEmail(dateVal);
+  const neatTime = formatSheetTimeForEmail(timeStr);
+  if (clientEmail) {
+    const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
+    MailApp.sendEmail({
+      to: clientEmail,
+      name: "Roni's Nail Studio",
+      subject: 'Appointment Cancelled: Roni\'s Nail Studio',
+      htmlBody: html,
+    });
+  }
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Cancelled (via app): ' + clientName,
+    htmlBody:
+      '<p style="font-family:sans-serif;"><strong>' +
+      escapeHtml(clientName) +
+      '</strong> — ' +
+      escapeHtml(neatD) +
+      ' at ' +
+      escapeHtml(neatTime) +
+      ' was cancelled from the admin app.</p>',
+  });
+  return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * Owner edit details (admin app). Updates client name / phone / email / service
+ * on a booking (this CRM stores client info per-booking, so this also serves as
+ * "manage client info"). Best-effort syncs the calendar event title + location.
+ * Does NOT email the client (it's an internal record edit). Admin-secret gated.
+ */
+function handleOwnerUpdateBooking(d) {
+  var secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  var eventId = String(d.eventId || '').trim();
+  if (!eventId) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  var hasAny =
+    d.clientName !== undefined || d.phone !== undefined || d.email !== undefined || d.service !== undefined;
+  if (!hasAny) return jsonResponse_({ status: 'error', message: 'nothing_to_update' });
+
+  var ss = getCRMSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  var data = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][8]) === eventId) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+  if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'not_found' });
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  var newName, newService;
+  try {
+    if (d.clientName !== undefined) {
+      newName = String(d.clientName).trim() || 'Client';
+      sheet.getRange(rowIndex, 2).setValue(newName);
+    }
+    if (d.phone !== undefined) sheet.getRange(rowIndex, 3).setValue(String(d.phone).trim());
+    if (d.service !== undefined) {
+      newService = String(d.service).trim();
+      sheet.getRange(rowIndex, 4).setValue(newService);
+    }
+    if (d.email !== undefined) sheet.getRange(rowIndex, 7).setValue(String(d.email).trim());
+    SpreadsheetApp.flush();
+
+    // Best-effort: keep the calendar event in sync with name/service.
+    var status = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
+    var currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
+    try {
+      var cal = CalendarApp.getCalendarById(CALENDAR_ID);
+      var ev = cal.getEventById(currentEventId);
+      if (ev) {
+        markInternalCalendarMutation_();
+        if (newName !== undefined) {
+          ev.setTitle(status === 'CLIENT_CONFIRMED' ? clientConfirmedCalendarEventTitle_(newName) : newName);
+        }
+        if (newService !== undefined) {
+          var tdisp = Utilities.formatDate(ev.getStartTime(), Session.getScriptTimeZone(), 'h:mm a');
+          applyBookingLocationToEvent_(ev, tdisp, newService);
+        }
+      }
+    } catch (calErr) {
+      Logger.log('handleOwnerUpdateBooking: calendar sync skipped: ' + calErr);
+    }
+    clearBookingEndpointCaches_();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * Owner reschedule (admin app). Moves a CONFIRMED / CLIENT_CONFIRMED booking to
+ * a new date/time, keeping the existing duration. Unlike the client-facing
+ * `reschedule` action, this does NOT enforce the public booking window or lead
+ * time (the owner may book any valid studio slot), but it DOES still validate
+ * studio hours and slot overlap. Emails the client the same "rescheduled"
+ * email the website sends. Admin-secret gated; additive.
+ */
+function handleOwnerRescheduleBooking(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const eventId = String(d.eventId || '').trim();
+  if (!eventId || !d.date || !d.time) {
+    return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  }
+  const rs = String(d.date).split('T')[0].trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(rs)) {
+    return jsonResponse_({ status: 'error', message: 'bad_date' });
+  }
+  const start = parseYmdAndTimeLocal_(rs, convertTo24Hour(String(d.time).trim()));
+  if (isNaN(start.getTime())) {
+    return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  }
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  let rowIndex = -1;
+  let clientName = '';
+  let clientEmail = '';
+  let service = '';
+  let rowStatus = '';
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][8]) !== eventId) continue;
+    rowIndex = i + 1;
+    clientName = data[i][1];
+    service = data[i][3];
+    clientEmail = data[i][6];
+    rowStatus = normalizeSheetStatus_(data[i][7]);
+    break;
+  }
+  if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'not_found' });
+  if (rowStatus !== 'CONFIRMED' && rowStatus !== 'CLIENT_CONFIRMED') {
+    return jsonResponse_({ status: 'error', message: 'not_confirmed' });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let neatTimeStr = '';
+  let neatDate = '';
+  try {
+    const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    const ev = cal.getEventById(currentEventId);
+    if (!ev) return jsonResponse_({ status: 'error', message: 'event_missing' });
+    const durMin = effectiveDurationMinutesFromEvent_(ev);
+    if (!isBookingWithinStudioHours_(start, durMin)) {
+      return jsonResponse_({ status: 'error', message: 'invalid_day_or_time' });
+    }
+    const newEnd = new Date(start.getTime() + durMin * 60000);
+    if (slotOverlapsExistingCalendarEvents_(start, newEnd, [currentEventId])) {
+      return jsonResponse_({ status: 'error', message: 'slot_unavailable' });
+    }
+    markInternalCalendarMutation_();
+    ev.setTime(start, newEnd);
+    neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
+    // Preserve the event title (keeps the ✧ prefix on client-confirmed events).
+    applyBookingLocationToEvent_(ev, neatTimeStr, service);
+    sheet.getRange(rowIndex, 5).setValue(start);
+    sheet.getRange(rowIndex, 6).setValue(neatTimeStr);
+    sheet.getRange(rowIndex, 11).setValue('');
+    SpreadsheetApp.flush();
+    clearBookingEndpointCaches_();
+    neatDate = Utilities.formatDate(start, Session.getScriptTimeZone(), 'EEEE, MMMM d, yyyy');
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (clientEmail) {
+    const clientHtml = getRescheduledClientEmailHtml(clientName, neatDate, neatTimeStr, service);
+    MailApp.sendEmail({
+      to: clientEmail,
+      name: "Roni's Nail Studio",
+      subject: 'Appointment rescheduled - Roni\'s Nail Studio',
+      htmlBody: clientHtml,
+    });
+  }
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Rescheduled (via app): ' + clientName,
+    htmlBody:
+      '<p style="font-family:sans-serif;"><strong>' +
+      escapeHtml(clientName) +
+      '</strong> moved to ' +
+      escapeHtml(neatDate) +
+      ' at ' +
+      escapeHtml(neatTimeStr) +
+      '.</p>',
+  });
+  return jsonResponse_({ status: 'success', dateLabel: neatDate, timeLabel: neatTimeStr });
+}
+
+/**
+ * Read-only listing of bookings from the sheet for the admin mobile app.
+ * Filters: { from: 'yyyy-MM-dd', to: 'yyyy-MM-dd' (inclusive), statuses: [..] }
+ * Returns rows with full client + appointment detail. Does NOT mutate anything.
+ */
+function handleOwnerListBookings(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const tz = Session.getScriptTimeZone();
+  const fromYmd = d.from ? String(d.from).split('T')[0].trim() : '';
+  const toYmd = d.to ? String(d.to).split('T')[0].trim() : '';
+  const fromMs = /^\d{4}-\d{2}-\d{2}$/.test(fromYmd)
+    ? parseYmdAndTimeLocal_(fromYmd, '00:00:00').getTime()
+    : NaN;
+  const toMs = /^\d{4}-\d{2}-\d{2}$/.test(toYmd)
+    ? parseYmdAndTimeLocal_(toYmd, '23:59:59').getTime()
+    : NaN;
+  const allowed = Array.isArray(d.statuses) && d.statuses.length
+    ? d.statuses.map(function (s) { return String(s || '').trim().toUpperCase(); })
+    : null;
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  const out = [];
+  for (var i = 1; i < data.length; i++) {
+    const row = data[i];
+    const status = normalizeSheetStatus_(row[7]);
+    if (allowed && allowed.indexOf(status) < 0) continue;
+    const startMs = appointmentRowStartMs_(row[4], row[5]);
+    if (!isNaN(fromMs) && !isNaN(startMs) && startMs < fromMs) continue;
+    if (!isNaN(toMs) && !isNaN(startMs) && startMs > toMs) continue;
+    out.push({
+      rowIndex: i + 1,
+      clientName: String(row[1] || '').trim(),
+      phone: String(row[2] || '').trim(),
+      service: String(row[3] || '').trim(),
+      dateLabel: formatSheetDateForEmail(row[4]),
+      timeLabel: formatSheetTimeForEmail(row[5]),
+      startMs: isNaN(startMs) ? null : startMs,
+      clientEmail: String(row[6] || '').trim(),
+      status: status,
+      eventId: String(row[8] || '').trim(),
+      // ownerToken authorizes accept/reject/propose mutations. The same token is
+      // already embedded in the owner email links, so exposing it through this
+      // admin-secret-gated endpoint adds no additional attack surface.
+      ownerToken: String(row[9] || '').trim(),
+    });
+  }
+  out.sort(function (a, b) {
+    const av = a.startMs == null ? Infinity : a.startMs;
+    const bv = b.startMs == null ? Infinity : b.startMs;
+    return av - bv;
+  });
+
+  // When a date range is given (e.g. the calendar grid asks for one week), attach
+  // each booking's real END time from the calendar in a SINGLE getEvents call, so
+  // the app can draw blocks at the correct length. Best-effort: if the calendar
+  // read fails, endMs stays null and the app falls back to a default block height.
+  if (!isNaN(fromMs) && !isNaN(toMs)) {
+    try {
+      const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+      const evs = cal.getEvents(new Date(fromMs), new Date(toMs + 86400000));
+      const endById = Object.create(null);
+      for (var e = 0; e < evs.length; e++) {
+        endById[String(evs[e].getId()).split('@')[0]] = evs[e].getEndTime().getTime();
+      }
+      // onCalendar = whether the booking's event still exists on the calendar.
+      // If the owner deleted the event (cancelled it) but the sheet status hasn't
+      // caught up yet, onCalendar is false so the app can hide it.
+      for (var o = 0; o < out.length; o++) {
+        const idKey = String(out[o].eventId || '').split('@')[0];
+        const found = !!(idKey && endById[idKey] !== undefined);
+        out[o].onCalendar = found;
+        if (found) out[o].endMs = endById[idKey];
+      }
+    } catch (calErr) {
+      Logger.log('handleOwnerListBookings: endMs enrichment skipped: ' + calErr);
+    }
+  }
+
+  return jsonResponse_({ status: 'success', timeZone: tz, bookings: out });
+}
+
 function collectCalendarWeekEvents_(rangeStart, rangeEndExclusive) {
   const out = [];
   function addCal(calId, key) {
@@ -2775,6 +3251,41 @@ function sendTwoDayReminders() {
     const apptDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     const daysUntil = Math.round((apptDay - todayStart) / 86400000);
     if (daysUntil !== 2) continue;
+
+    // AUTHORITATIVE existence check (prevents reminders for cancelled/deleted
+    // appointments). getActiveBookingEvent_ above can hand back a STALE copy of
+    // an event that was just removed from the calendar, because the advanced
+    // Calendar status check is unavailable and it falls back to trusting
+    // getEventById. getEvents() reflects the real current calendar state, so an
+    // event you deleted will not appear here.
+    // We also re-read the row's status fresh, in case the calendar->sheet sync
+    // marked it CANCELLED after this run's data snapshot was taken.
+    const statusFresh = normalizeSheetStatus_(sheet.getRange(i + 1, 8).getValue());
+    if (statusFresh !== 'CONFIRMED' && statusFresh !== 'CLIENT_CONFIRMED') {
+      Logger.log('sendTwoDayReminders: row ' + (i + 1) + ' status is now ' + statusFresh + ' — skipping reminder');
+      continue;
+    }
+    let stillOnCalendar = true;
+    try {
+      const around = calendar.getEvents(new Date(start.getTime() - 60000), new Date(start.getTime() + 60000));
+      stillOnCalendar = false;
+      for (let li = 0; li < around.length; li++) {
+        if (calendarEventIdsMatch_(around[li].getId(), eventId)) {
+          stillOnCalendar = true;
+          break;
+        }
+      }
+    } catch (verifyErr) {
+      // Fail open: don't suppress a legitimate reminder because of a transient
+      // calendar read error.
+      stillOnCalendar = true;
+      Logger.log('sendTwoDayReminders: row ' + (i + 1) + ' calendar verify error (sending anyway): ' + verifyErr);
+    }
+    if (!stillOnCalendar) {
+      Logger.log('sendTwoDayReminders: row ' + (i + 1) + ' event no longer on calendar — skipping reminder');
+      continue;
+    }
+
     // Skip only if a reminder was already sent for THIS appointment time. If the
     // appointment was rescheduled since, the stored key won't match and we re-send.
     const reminderKey = reminderSentKeyForStart_(start, tz);
