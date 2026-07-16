@@ -12,7 +12,37 @@ const PERSONAL_CALENDAR_ID = 'nguyenveronica0108@gmail.com';
 const SHEET_NAME = 'Bookings';
 const ARCHIVE_SHEET_NAME = 'BookingsArchive';
 const HOURS_SHEET_NAME = 'StudioHours';
+/**
+ * Owner-only notes about a client, for Roni's own reference — never shown to
+ * clients and never emailed. This CRM stores client info per-BOOKING row, so
+ * there's no client record to hang a note on; this tab is that record, keyed by
+ * the same identity the admin app derives (phone digits, else name|email, else
+ * name — see clientKeyForBooking in the app).
+ *
+ * That key is derived, not stable: editing a client's phone changes it. The app
+ * re-keys the note when it saves such an edit, which is also why the key lives
+ * in column A rather than being implied by row order.
+ */
+const CLIENT_NOTES_SHEET_NAME = 'ClientNotes';
 const PENDING_COLOR = '5';
+/**
+ * Calendar that owner time blocks are created on — deliberately NOT CALENDAR_ID.
+ *
+ * Roni colour-codes by CALENDAR in Google Calendar (bookings calendar =
+ * Wisteria "work", her blocked/personal time = Cherry Blossom). Those two shades
+ * exist only in GC's 24-colour *calendar* palette, not the 11 event colours an
+ * API can set on an event — so the ONLY way a block comes out Cherry Blossom is
+ * to live on its own calendar that is coloured Cherry Blossom. Anything created
+ * on CALENDAR_ID inherits Wisteria and reads as client work.
+ *
+ * This is the studio account's own calendar, so blocks stay inside the business
+ * account rather than landing on her personal one. Every place that reads or
+ * mutates app events has to know about it — see appCalendarIds_ (lookups),
+ * buildPublicBusyArray_ (public availability) and
+ * slotOverlapsExistingCalendarEvents_ (double-booking), or blocks would stop
+ * protecting her time.
+ */
+const BLOCKS_CALENDAR_ID = 'ronisnailstudio@gmail.com';
 const CLIENT_CONFIRMED_CAL_PREFIX = '\u2727 ';
 const MY_EMAIL = 'ronisnailstudio@gmail.com';
 const TWO_DAY_REMINDER_EMAIL_SUBJECT = "Please confirm your appointment — Roni's Nail Studio";
@@ -205,6 +235,27 @@ function clampDurationMinutes_(n) {
   return Math.max(15, Math.min(480, Math.round(x)));
 }
 
+/**
+ * Rewrite the duration tokens in a calendar event description so the effective
+ * duration (max of calendar length and the DurationMinutes token) reflects a new
+ * value — required when SHORTENING, or effectiveDurationMinutesFromEvent_ would
+ * keep returning the larger old token. Updates both the human "Duration: N
+ * minutes" line and the machine "DurationMinutes: N" token (appending the latter
+ * if absent).
+ */
+function withDurationInDescription_(description, durMin) {
+  var d = String(description == null ? '' : description);
+  if (/DurationMinutes:\s*\d+/i.test(d)) {
+    d = d.replace(/DurationMinutes:\s*\d+/i, 'DurationMinutes: ' + durMin);
+  } else {
+    d = d + '\nDurationMinutes: ' + durMin;
+  }
+  if (/Duration:\s*\d+\s*minutes/i.test(d)) {
+    d = d.replace(/Duration:\s*\d+\s*minutes/i, 'Duration: ' + durMin + ' minutes');
+  }
+  return d;
+}
+
 function maxPublicBookingDateYmd_() {
   const tz = Session.getScriptTimeZone();
   const todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
@@ -310,6 +361,36 @@ function calendarEventIdsMatch_(idA, idB) {
   return false;
 }
 
+/** Calendars the admin app creates events on: client work, then owner blocks. */
+function appCalendarIds_() {
+  return [CALENDAR_ID, BLOCKS_CALENDAR_ID];
+}
+
+/**
+ * Find an event by id across every calendar the app writes to. Client
+ * appointments live on CALENDAR_ID; owner time blocks live on
+ * BLOCKS_CALENDAR_ID (see that constant for why they're separate). Returns the
+ * event, or null if it isn't on either.
+ */
+function getEventByIdAnyCalendar_(eventId) {
+  const want = String(eventId || '').trim();
+  if (!want) return null;
+  const ids = appCalendarIds_();
+  for (var i = 0; i < ids.length; i++) {
+    const cid = String(ids[i] == null ? '' : ids[i]).trim();
+    if (!cid) continue;
+    try {
+      const cal = CalendarApp.getCalendarById(cid);
+      if (!cal) continue;
+      const ev = cal.getEventById(want);
+      if (ev) return ev;
+    } catch (err) {
+      // Not on this calendar (or unreadable) — try the next one.
+    }
+  }
+  return null;
+}
+
 function getActiveBookingEvent_(calendar, eventId, sheetStartHint) {
   const want = String(eventId || '').trim();
   if (!want) return null;
@@ -377,6 +458,21 @@ function appointmentRowStartMs_(dateVal, timeVal) {
   const d = parseYmdAndTimeLocal_(ymd, convertTo24Hour(timeDisp));
   if (isNaN(d.getTime())) return NaN;
   return d.getTime();
+}
+
+/**
+ * True when an appointment's start has already passed. Client-facing emails are
+ * suppressed for actions on such "old" appointments — the owner often tidies up
+ * past bookings (cancel / reschedule / edit) and the client shouldn't be emailed
+ * about an appointment that's already over. Unknown/invalid start -> false (don't
+ * suppress, so legitimate future emails always send). Matches the existing
+ * `apptAlreadyPassed` check used by the calendar sync.
+ */
+function appointmentStartPassed_(startMs) {
+  return startMs != null && !isNaN(startMs) && startMs < Date.now();
+}
+function appointmentRowPassed_(dateVal, timeVal) {
+  return appointmentStartPassed_(appointmentRowStartMs_(dateVal, timeVal));
 }
 
 function isCalendarToSheetSyncPaused_() {
@@ -551,6 +647,9 @@ function publicBusyRangeEnd_() {
 function buildPublicBusyArray_(ignoreEventId) {
   const busCal = CalendarApp.getCalendarById(CALENDAR_ID);
   const perCal = CalendarApp.getCalendarById(PERSONAL_CALENDAR_ID);
+  // Owner time blocks live here, so this MUST be part of the public busy feed
+  // or clients could book straight over her blocked time.
+  const blkCal = CalendarApp.getCalendarById(BLOCKS_CALENDAR_ID);
   const now = new Date();
   const rangeEnd = publicBusyRangeEnd_();
   const ignore = String(ignoreEventId || '').trim();
@@ -570,6 +669,7 @@ function buildPublicBusyArray_(ignoreEventId) {
 
   pushBusy_(busCal);
   pushBusy_(perCal);
+  pushBusy_(blkCal);
   return allBusy;
 }
 
@@ -887,7 +987,7 @@ function handleOwnerAcceptBooking(d) {
   }
 
   let warning = '';
-  if (clientEmail) {
+  if (clientEmail && !appointmentRowPassed_(dateVal, timeStr)) {
     try {
       const neatD = formatSheetDateForEmail(dateVal);
       const neatTime = formatSheetTimeForEmail(timeStr);
@@ -1009,6 +1109,31 @@ function handlePublicBookingPost_(d) {
       subject: 'New Booking Request: ' + d.clientName,
       htmlBody: requestHtml,
     });
+
+    // Instant push to the owner's phone — parity with the email above, instead of
+    // waiting up to 5 min for checkNewBookingsAndPush (now just a backstop). Mark
+    // this request's token notified so the poll won't send a duplicate. Skip the
+    // marking when the notified set hasn't been seeded yet (no poll run since a
+    // device registered), so the poll's first-run seeding still suppresses a
+    // blast of any pre-existing requests.
+    try {
+      var pushProps = PropertiesService.getScriptProperties();
+      var pushToks = [];
+      try { var ptraw = pushProps.getProperty(PROP_PUSH_TOKENS); pushToks = ptraw ? JSON.parse(ptraw) : []; } catch (pte) { pushToks = []; }
+      if (pushToks.length) {
+        var pushDate = Utilities.formatDate(start, tz, 'EEE, MMM d');
+        sendExpoPush_(pushToks, 'New booking request', d.clientName + ' — ' + pushDate + ' at ' + neatTimeEmail, { type: 'pending' });
+        var pnRaw = pushProps.getProperty(PROP_PUSH_NOTIFIED);
+        if (pnRaw !== null && pnRaw !== undefined) {
+          var pnArr = [];
+          try { pnArr = JSON.parse(pnRaw) || []; } catch (pne) { pnArr = []; }
+          if (pnArr.indexOf(actionToken) < 0) pnArr.push(actionToken);
+          pushProps.setProperty(PROP_PUSH_NOTIFIED, JSON.stringify(capArray_(pnArr, 500)));
+        }
+      }
+    } catch (pushErr) {
+      Logger.log('handlePublicBookingPost_: instant push failed: ' + pushErr);
+    }
 
     return jsonResponse_({ status: 'success' });
   } finally {
@@ -1259,7 +1384,7 @@ function syncCalendarToSpreadsheetBody_(dryRun) {
           const service = data[i][3];
           markInternalCalendarMutation_();
           applyBookingLocationToEvent_(event, calTimeDisplay, service);
-          if (clientEmail) {
+          if (clientEmail && !appointmentRowPassed_(data[i][4], data[i][5])) {
             const html = getCalendarUpdatedClientEmailHtml(data[i][1], neatDate, calTimeDisplay, service);
             MailApp.sendEmail({
               to: clientEmail,
@@ -1424,7 +1549,7 @@ function handleOwnerRejectBooking(d) {
   const neatD = formatSheetDateForEmail(dateVal);
   const neatTime = formatSheetTimeForEmail(timeStr);
   const declinedHtml = getDeclinedEmailHtml(clientName, neatD, neatTime, service, reason);
-  if (clientEmail) {
+  if (clientEmail && !appointmentRowPassed_(dateVal, timeStr)) {
     MailApp.sendEmail({
       to: clientEmail,
       name: "Roni's Nail Studio",
@@ -1521,7 +1646,11 @@ function handleReschedulePost(d) {
 
     markInternalCalendarMutation_();
     ev.setTime(start, newEnd);
-    ev.setTitle(clientName);
+    // Same prefix bug as handleOwnerUpdateBooking had: this path accepts
+    // CLIENT_CONFIRMED and never resets the status, so a bare setTitle(clientName)
+    // silently dropped the "✧ " off a client-confirmed booking whenever the
+    // client rescheduled from their email link.
+    ev.setTitle(bookingCalendarTitleFor_(statusFresh, clientName));
     neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
     applyBookingLocationToEvent_(ev, neatTimeStr, service);
     sheet.getRange(rowIndex, 5).setValue(start);
@@ -1560,6 +1689,94 @@ function handleReschedulePost(d) {
     htmlBody: ownerBody,
   });
   return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * --- Deferred side-effects for client email-link pages ---
+ * The client-facing confirm / cancel / accept-or-decline-alternate pages used to
+ * send the owner + client emails (and rewrite the calendar title) synchronously,
+ * so the visitor waited ~5s for "You're all set!". Those slow Calendar/Gmail
+ * calls are now queued and run by a one-time trigger moments later, so the page
+ * renders as soon as the essential sheet/calendar state is saved. Best-effort by
+ * design: a queued email/title-update lands within ~a minute, not instantly.
+ */
+var PROP_DEFERRED_TASKS = 'DEFERRED_CLIENT_TASKS';
+
+function enqueueDeferredTask_(task) {
+  var props = PropertiesService.getScriptProperties();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    // Couldn't grab the queue lock — run it inline so nothing is silently dropped.
+    try { processDeferredTask_(task); } catch (e) { Logger.log('inline deferred task failed: ' + e); }
+    return;
+  }
+  try {
+    var raw = props.getProperty(PROP_DEFERRED_TASKS);
+    var arr = [];
+    try { arr = raw ? JSON.parse(raw) : []; } catch (e) { arr = []; }
+    arr.push(task);
+    props.setProperty(PROP_DEFERRED_TASKS, JSON.stringify(arr.slice(-200)));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ensureDeferredTrigger_() {
+  try {
+    var trigs = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < trigs.length; i++) {
+      if (trigs[i].getHandlerFunction() === 'drainDeferredTasks_') return;
+    }
+    ScriptApp.newTrigger('drainDeferredTasks_').timeBased().after(1).create();
+  } catch (e) {
+    Logger.log('ensureDeferredTrigger_ failed: ' + e);
+  }
+}
+
+function drainDeferredTasks_() {
+  var props = PropertiesService.getScriptProperties();
+  var lock = LockService.getScriptLock();
+  var tasks = [];
+  if (lock.tryLock(20000)) {
+    try {
+      var raw = props.getProperty(PROP_DEFERRED_TASKS);
+      try { tasks = raw ? JSON.parse(raw) : []; } catch (e) { tasks = []; }
+      props.deleteProperty(PROP_DEFERRED_TASKS);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+  // One-time trigger: remove it (and any duplicates) now that we've drained.
+  try {
+    var trigs = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < trigs.length; t++) {
+      if (trigs[t].getHandlerFunction() === 'drainDeferredTasks_') ScriptApp.deleteTrigger(trigs[t]);
+    }
+  } catch (e) { Logger.log('drain trigger cleanup failed: ' + e); }
+  for (var j = 0; j < tasks.length; j++) {
+    try { processDeferredTask_(tasks[j]); } catch (e) { Logger.log('deferred task failed: ' + e); }
+  }
+  // If new tasks were queued while draining, schedule another pass.
+  try { if (props.getProperty(PROP_DEFERRED_TASKS)) ensureDeferredTrigger_(); } catch (e) {}
+}
+
+function processDeferredTask_(task) {
+  if (!task || !task.kind) return;
+  if (task.kind === 'email') {
+    var msg = { to: task.to, subject: task.subject, htmlBody: task.htmlBody };
+    if (task.name) msg.name = task.name;
+    MailApp.sendEmail(msg);
+  } else if (task.kind === 'retitle') {
+    var ev = CalendarApp.getCalendarById(CALENDAR_ID).getEventById(task.eventId);
+    if (ev) {
+      markInternalCalendarMutation_();
+      if (task.title) ev.setTitle(task.title);
+      if (task.service !== undefined && task.service !== null && task.service !== '') {
+        var td = Utilities.formatDate(ev.getStartTime(), Session.getScriptTimeZone(), 'h:mm a');
+        applyBookingLocationToEvent_(ev, td, task.service);
+      }
+    }
+  }
 }
 
 function doGet(e) {
@@ -1646,14 +1863,16 @@ function doGet(e) {
       const neatTime = formatSheetTimeForEmail(timeStr);
       if (clientEmail) {
         const declineHtml = getAlternateDeclinedClientEmailHtml(clientName, neatD, neatTime, service);
-        MailApp.sendEmail({
+        enqueueDeferredTask_({
+          kind: 'email',
           to: clientEmail,
           name: "Roni's Nail Studio",
           subject: 'Alternate time - Roni\'s Nail Studio',
           htmlBody: declineHtml,
         });
       }
-      MailApp.sendEmail({
+      enqueueDeferredTask_({
+        kind: 'email',
         to: MY_EMAIL,
         subject: 'Client declined alternate time: ' + clientName,
         htmlBody:
@@ -1665,6 +1884,7 @@ function doGet(e) {
           escapeHtml(neatTime) +
           '.</p>',
       });
+      ensureDeferredTrigger_();
       return htmlPage('Recorded', '<h2>Thanks for letting us know</h2><p>You can book another time on our website whenever you like.</p>');
     }
     const start = parseYmdAndTimeLocal_(datePart, convertTo24Hour(propTimeStr));
@@ -1710,9 +1930,10 @@ function doGet(e) {
     const neatDate = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
     const acceptHtml = getConfirmedEmailHtml(clientName, neatDate, neatTimeDisplay, service);
     if (clientEmail) {
-      MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Appointment Confirmed: Roni's Nail Studio", htmlBody: acceptHtml });
+      enqueueDeferredTask_({ kind: 'email', to: clientEmail, name: "Roni's Nail Studio", subject: "Appointment Confirmed: Roni's Nail Studio", htmlBody: acceptHtml });
     }
-    MailApp.sendEmail({
+    enqueueDeferredTask_({
+      kind: 'email',
       to: MY_EMAIL,
       subject: 'Client accepted alternate time: ' + clientName,
       htmlBody:
@@ -1724,6 +1945,7 @@ function doGet(e) {
         escapeHtml(neatTimeDisplay) +
         '</strong>.</p>',
     });
+    ensureDeferredTrigger_();
     return htmlPage('Confirmed', '<h2>You\'re all set!</h2><p>Your appointment is confirmed. We\'ll see you then.</p>');
   }
 
@@ -1781,18 +2003,9 @@ function doGet(e) {
           return htmlPage('Invalid', '<h2>Link not valid</h2><p>This reminder link only applies to confirmed appointments.</p>');
         }
         sheet.getRange(rowIndex, 8).setValue('CLIENT_CONFIRMED');
-        const calConfirm = CalendarApp.getCalendarById(CALENDAR_ID);
-        const evConfirm = calConfirm.getEventById(eventId);
-        if (evConfirm) {
-          markInternalCalendarMutation_();
-          evConfirm.setTitle(clientConfirmedCalendarEventTitle_(clientName));
-          applyBookingLocationToEvent_(
-            evConfirm,
-            Utilities.formatDate(evConfirm.getStartTime(), Session.getScriptTimeZone(), 'h:mm a'),
-            service
-          );
-        }
         SpreadsheetApp.flush();
+        // Defer the calendar star/title + owner notification so the client's page
+        // renders immediately instead of waiting on Calendar + Gmail.
         const neatD = formatSheetDateForEmail(dateVal);
         const neatTime = formatSheetTimeForEmail(timeStr);
         const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
@@ -1804,7 +2017,9 @@ function doGet(e) {
           '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' +
           escapeHtml(clientEmail || '—') +
           '</p></div>';
-        MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client confirmed appointment: ' + clientName, htmlBody: ownerBody });
+        enqueueDeferredTask_({ kind: 'retitle', eventId: eventId, title: clientConfirmedCalendarEventTitle_(clientName), service: service });
+        enqueueDeferredTask_({ kind: 'email', to: MY_EMAIL, subject: 'Client confirmed appointment: ' + clientName, htmlBody: ownerBody });
+        ensureDeferredTrigger_();
         return htmlPage('Thank you', '<h2>Thank you!</h2><p>Your appointment is confirmed. We\'ll see you soon.</p>');
       } finally {
         lock.releaseLock();
@@ -1831,11 +2046,12 @@ function doGet(e) {
         const neatTime = formatSheetTimeForEmail(timeStr);
         const ownerRows = emailDetailRow('Date', neatD) + emailDetailRow('Time', neatTime) + emailDetailRow('Service', service);
         const ownerBody = '<div style="font-family:sans-serif;padding:24px;max-width:480px;margin:auto;"><h2 style="font-weight:500;">Client cancelled (2-day reminder)</h2><p><strong>' + escapeHtml(clientName) + '</strong> cancelled their upcoming appointment.</p><table style="width:100%;border-collapse:collapse;margin-top:16px;background:#fafafa;border-radius:8px;"><tbody>' + ownerRows + '</tbody></table><p style="margin-top:16px;color:#666;">Client email: ' + escapeHtml(clientEmail || '—') + '</p></div>';
-        MailApp.sendEmail({ to: MY_EMAIL, subject: 'Client cancelled appointment: ' + clientName, htmlBody: ownerBody });
+        enqueueDeferredTask_({ kind: 'email', to: MY_EMAIL, subject: 'Client cancelled appointment: ' + clientName, htmlBody: ownerBody });
         if (clientEmail) {
           const clientNote = '<div style="font-family:sans-serif;padding:32px;max-width:480px;margin:auto;"><p>Hi ' + escapeHtml(clientName) + ',</p><p>Your appointment on <strong>' + escapeHtml(neatD) + '</strong> at <strong>' + escapeHtml(neatTime) + '</strong> has been cancelled as requested.</p><p>If you\'d like to book again, you can do so on our website anytime.</p><p style="margin-top:24px;color:#999;font-size:13px;">Roni\'s Nail Studio</p></div>';
-          MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: 'Appointment cancelled: Roni\'s Nail Studio', htmlBody: clientNote });
+          enqueueDeferredTask_({ kind: 'email', to: clientEmail, name: "Roni's Nail Studio", subject: 'Appointment cancelled: Roni\'s Nail Studio', htmlBody: clientNote });
         }
+        ensureDeferredTrigger_();
         return htmlPage('Cancelled', '<h2>Appointment cancelled</h2><p>We\'ve sent a confirmation to your email.</p>');
       } finally {
         lock.releaseLock();
@@ -1923,6 +2139,21 @@ function doPost(e) {
     }
     if (isJsonBoolTrue_(d.ownerUpdateBooking)) {
       return handleOwnerUpdateBooking(d);
+    }
+    if (isJsonBoolTrue_(d.ownerResendConfirmation)) {
+      return handleOwnerResendConfirmation(d);
+    }
+    if (isJsonBoolTrue_(d.ownerCreateBlock)) {
+      return handleOwnerCreateBlock(d);
+    }
+    if (isJsonBoolTrue_(d.ownerListClientNotes)) {
+      return handleOwnerListClientNotes(d);
+    }
+    if (isJsonBoolTrue_(d.ownerSetClientNote)) {
+      return handleOwnerSetClientNote(d);
+    }
+    if (isJsonBoolTrue_(d.ownerMergeClients)) {
+      return handleOwnerMergeClients(d);
     }
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
@@ -2438,7 +2669,7 @@ function handleOwnerProposeAlternate(d) {
   const origNeatD = formatSheetDateForEmail(origDateVal);
   const origNeatT = formatSheetTimeForEmail(origTimeStr);
   const newNeatD = Utilities.formatDate(pdate, tz, 'EEEE, MMMM d, yyyy');
-  if (clientEmail) {
+  if (clientEmail && !appointmentRowPassed_(origDateVal, origTimeStr)) {
     const html = getAlternateProposalClientEmailHtml(clientName, origNeatD, origNeatT, newNeatD, propTimeTrim, service, d.eventId, modTok);
     MailApp.sendEmail({ to: clientEmail, name: "Roni's Nail Studio", subject: "Suggested appointment time — Roni's Nail Studio", htmlBody: html });
   }
@@ -2503,8 +2734,11 @@ function handleOwnerDirectBooking(d) {
   SpreadsheetApp.flush();
   clearBookingEndpointCaches_();
   const neatD = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
-  const acceptEmailHtml = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
-  MailApp.sendEmail({ to: email, name: "Roni's Nail Studio", subject: "Appointment Confirmed: Roni's Nail Studio", htmlBody: acceptEmailHtml });
+  // No client email when logging a past-dated appointment (backfilling a record).
+  if (!appointmentStartPassed_(start.getTime())) {
+    const acceptEmailHtml = getConfirmedEmailHtml(clientName, neatD, neatTime, service);
+    MailApp.sendEmail({ to: email, name: "Roni's Nail Studio", subject: "Appointment Confirmed: Roni's Nail Studio", htmlBody: acceptEmailHtml });
+  }
   const ownerRows = emailDetailRow('Client', clientName) + emailDetailRow('When', neatD + ' · ' + neatTime) + emailDetailRow('Service', service) + emailDetailRow('Email', email);
   MailApp.sendEmail({
     to: MY_EMAIL,
@@ -2512,6 +2746,212 @@ function handleOwnerDirectBooking(d) {
     htmlBody: '<p style="font-family:sans-serif;">You added a confirmed appointment from the admin page.</p><table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fafafa;border-radius:8px;"><tbody>' + ownerRows + '</tbody></table>',
   });
   return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * Create a time block (admin app). Writes a BLOCKED sheet row + a real calendar
+ * event, so the website's busy feed automatically hides those slots from
+ * clients (the feed is built from calendar events). No emails — it's the owner
+ * blocking out her own time. BLOCKED rows are invisible to the calendar sync,
+ * the 2-day reminder job, and all client-facing flows (their status checks all
+ * enumerate specific statuses). Deliberately no studio-hours or overlap
+ * validation: blocking time over/outside anything is the owner's call.
+ * Admin-secret gated.
+ */
+function handleOwnerCreateBlock(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const label = String(d.label || '').trim() || 'Blocked';
+  const dateStr = d.date ? String(d.date).split('T')[0].trim() : '';
+  const timeStr = String(d.time || '').trim();
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !timeStr) {
+    return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  }
+  const start = parseYmdAndTimeLocal_(dateStr, convertTo24Hour(timeStr));
+  if (isNaN(start.getTime())) return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  const durMin = clampDurationMinutes_(d.durationMinutes);
+  const end = new Date(start.getTime() + durMin * 60000);
+
+  const ss = getCRMSpreadsheet();
+  const s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const row = s.getLastRow() + 1;
+  s.appendRow([new Date(), label, '', '', start, timeStr, '', 'BLOCKED', '', '', '', '', '', '', '']);
+  // Blocks go on the blocks calendar, not the bookings calendar, so Google
+  // Calendar paints them in that calendar's colour (Cherry Blossom) instead of
+  // the bookings calendar's Wisteria. See BLOCKS_CALENDAR_ID.
+  const c = CalendarApp.getCalendarById(BLOCKS_CALENDAR_ID);
+  if (!c) return jsonResponse_({ status: 'error', message: 'blocks_calendar_missing' });
+  const desc = 'Time block created from the admin app.\nDurationMinutes: ' + durMin;
+  markInternalCalendarMutation_();
+  const ev = c.createEvent(label, start, end, { description: desc });
+  s.getRange(row, 9).setValue(ev.getId());
+  SpreadsheetApp.flush();
+  clearBookingEndpointCaches_();
+  return jsonResponse_({ status: 'success', eventId: ev.getId() });
+}
+
+/** The ClientNotes tab, created on first use so no manual sheet setup is needed. */
+function getClientNotesSheet_() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(CLIENT_NOTES_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(CLIENT_NOTES_SHEET_NAME);
+    sh.appendRow(['clientKey', 'note', 'clientName', 'updatedAt']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/**
+ * All owner notes in one call. The admin app derives its whole client list
+ * locally from booking history, so it only needs the notes to join onto that —
+ * one fetch beats a request per client.
+ */
+function handleOwnerListClientNotes(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const sh = getClientNotesSheet_();
+  const data = sh.getDataRange().getValues();
+  const out = [];
+  for (var i = 1; i < data.length; i++) {
+    const key = String(data[i][0] == null ? '' : data[i][0]).trim();
+    const note = String(data[i][1] == null ? '' : data[i][1]);
+    if (!key || !note.trim()) continue;
+    out.push({ clientKey: key, note: note, clientName: String(data[i][2] || '').trim() });
+  }
+  return jsonResponse_({ status: 'success', notes: out });
+}
+
+/**
+ * Upsert one client's note. An empty/blank note deletes the record rather than
+ * leaving a hollow row — "no note" and "note cleared" should look identical.
+ * Owner-only: nothing here is ever surfaced to a client or put in an email.
+ */
+function handleOwnerSetClientNote(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const key = String(d.clientKey || '').trim();
+  if (!key) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const note = String(d.note == null ? '' : d.note);
+  const clientName = String(d.clientName || '').trim();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getClientNotesSheet_();
+    const data = sh.getDataRange().getValues();
+    let row = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] == null ? '' : data[i][0]).trim() === key) {
+        row = i + 1;
+        break;
+      }
+    }
+    if (!note.trim()) {
+      if (row > 0) sh.deleteRow(row);
+      return jsonResponse_({ status: 'success', cleared: true });
+    }
+    if (row > 0) {
+      sh.getRange(row, 2).setValue(note);
+      if (clientName) sh.getRange(row, 3).setValue(clientName);
+      sh.getRange(row, 4).setValue(new Date());
+    } else {
+      sh.appendRow([key, note, clientName, new Date()]);
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
+/** Calendar title for a booking, honouring the per-status prefixes. */
+function bookingCalendarTitleFor_(status, clientName) {
+  const n = String(clientName == null ? '' : clientName).trim() || 'Client';
+  if (status === 'CLIENT_CONFIRMED') return clientConfirmedCalendarEventTitle_(n);
+  if (status === 'PENDING' || status === 'MOD_PROPOSED') return 'PENDING: ' + n;
+  return n;
+}
+
+/**
+ * Merge duplicate client profiles (admin app).
+ *
+ * This CRM has no client records — the admin app derives its client list from
+ * booking rows, keyed on phone digits / name+email. So two "profiles" are just
+ * two groups of rows whose details disagree, and merging them means stamping one
+ * agreed set of details onto every row in both groups: they then derive to the
+ * same key and collapse into a single client.
+ *
+ * Takes explicit eventIds rather than a client key so the app decides exactly
+ * which bookings move — the keys themselves are what's unreliable here.
+ * Batched into one lock + one sheet pass; the per-booking alternative was a
+ * POST per row. Calendar titles follow best-effort. No client is emailed: this
+ * is an internal records tidy-up.
+ */
+function handleOwnerMergeClients(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const rawIds = Array.isArray(d.eventIds) ? d.eventIds : [];
+  const wanted = Object.create(null);
+  for (var r = 0; r < rawIds.length; r++) {
+    const norm = normalizeCalendarEventIdForCompare_(rawIds[r]);
+    if (norm) wanted[norm] = true;
+  }
+  if (!Object.keys(wanted).length) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const newName = String(d.clientName || '').trim();
+  if (!newName) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const phone = String(d.phone == null ? '' : d.phone).trim();
+  const email = String(d.email == null ? '' : d.email).trim();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let updated = 0;
+  try {
+    const ss = getCRMSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      const evId = String(data[i][8] == null ? '' : data[i][8]).trim();
+      if (!evId || !wanted[normalizeCalendarEventIdForCompare_(evId)]) continue;
+      const rowIndex = i + 1;
+      sheet.getRange(rowIndex, 2).setValue(newName);
+      sheet.getRange(rowIndex, 3).setValue(phone);
+      sheet.getRange(rowIndex, 7).setValue(email);
+      updated++;
+
+      // Keep the calendar readable, but never let it fail the merge — the sheet
+      // is the source of truth for who a booking belongs to.
+      try {
+        const status = normalizeSheetStatus_(data[i][7]);
+        const ev = getEventByIdAnyCalendar_(evId);
+        if (ev) {
+          markInternalCalendarMutation_();
+          ev.setTitle(bookingCalendarTitleFor_(status, newName));
+        }
+      } catch (calErr) {
+        Logger.log('handleOwnerMergeClients: calendar title skipped for ' + evId + ': ' + calErr);
+      }
+    }
+    SpreadsheetApp.flush();
+    clearBookingEndpointCaches_();
+  } finally {
+    lock.releaseLock();
+  }
+  if (!updated) return jsonResponse_({ status: 'error', message: 'not_found' });
+  return jsonResponse_({ status: 'success', updated: updated });
 }
 
 function handleOwnerCalendarWeek(d) {
@@ -2796,13 +3236,9 @@ function handleOwnerCancelBooking(d) {
   }
   try {
     const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    let ev = null;
-    try {
-      ev = cal.getEventById(currentEventId);
-    } catch (e) {
-      ev = null;
-    }
+    // Across both calendars: appointments sit on the bookings calendar, owner
+    // time blocks on the blocks calendar.
+    const ev = getEventByIdAnyCalendar_(currentEventId);
     if (ev) {
       markInternalCalendarMutation_();
       ev.deleteEvent();
@@ -2817,7 +3253,10 @@ function handleOwnerCancelBooking(d) {
 
   const neatD = formatSheetDateForEmail(dateVal);
   const neatTime = formatSheetTimeForEmail(timeStr);
-  if (clientEmail) {
+  // BLOCKED = owner time block; removing it is silent (no client, and the owner
+  // doesn't need an email about deleting her own block).
+  const wasBlock = rowStatus === 'BLOCKED';
+  if (!wasBlock && clientEmail && !appointmentRowPassed_(dateVal, timeStr)) {
     const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
     MailApp.sendEmail({
       to: clientEmail,
@@ -2826,18 +3265,20 @@ function handleOwnerCancelBooking(d) {
       htmlBody: html,
     });
   }
-  MailApp.sendEmail({
-    to: MY_EMAIL,
-    subject: 'Cancelled (via app): ' + clientName,
-    htmlBody:
-      '<p style="font-family:sans-serif;"><strong>' +
-      escapeHtml(clientName) +
-      '</strong> — ' +
-      escapeHtml(neatD) +
-      ' at ' +
-      escapeHtml(neatTime) +
-      ' was cancelled from the admin app.</p>',
-  });
+  if (!wasBlock) {
+    MailApp.sendEmail({
+      to: MY_EMAIL,
+      subject: 'Cancelled (via app): ' + clientName,
+      htmlBody:
+        '<p style="font-family:sans-serif;"><strong>' +
+        escapeHtml(clientName) +
+        '</strong> — ' +
+        escapeHtml(neatD) +
+        ' at ' +
+        escapeHtml(neatTime) +
+        ' was cancelled from the admin app.</p>',
+    });
+  }
   return jsonResponse_({ status: 'success' });
 }
 
@@ -2856,7 +3297,8 @@ function handleOwnerUpdateBooking(d) {
   if (!eventId) return jsonResponse_({ status: 'error', message: 'missing_fields' });
 
   var hasAny =
-    d.clientName !== undefined || d.phone !== undefined || d.email !== undefined || d.service !== undefined;
+    d.clientName !== undefined || d.phone !== undefined || d.email !== undefined ||
+    d.service !== undefined || d.durationMinutes !== undefined;
   if (!hasAny) return jsonResponse_({ status: 'error', message: 'nothing_to_update' });
 
   var ss = getCRMSpreadsheet();
@@ -2893,16 +3335,27 @@ function handleOwnerUpdateBooking(d) {
     var status = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
     var currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
     try {
-      var cal = CalendarApp.getCalendarById(CALENDAR_ID);
-      var ev = cal.getEventById(currentEventId);
+      var ev = getEventByIdAnyCalendar_(currentEventId);
       if (ev) {
         markInternalCalendarMutation_();
         if (newName !== undefined) {
-          ev.setTitle(status === 'CLIENT_CONFIRMED' ? clientConfirmedCalendarEventTitle_(newName) : newName);
+          // Via bookingCalendarTitleFor_ so the status prefix survives: this used
+          // to special-case only CLIENT_CONFIRMED's "✧ ", which silently dropped
+          // a pending hold's "PENDING: " prefix on any details edit.
+          ev.setTitle(bookingCalendarTitleFor_(status, newName));
         }
         if (newService !== undefined) {
           var tdisp = Utilities.formatDate(ev.getStartTime(), Session.getScriptTimeZone(), 'h:mm a');
           applyBookingLocationToEvent_(ev, tdisp, newService);
+        }
+        // Duration edit (admin-only, no client email): resize the event end and
+        // rewrite the description's duration tokens so the new length sticks even
+        // when shortening. Start time is unchanged.
+        if (d.durationMinutes !== undefined) {
+          var durMin = clampDurationMinutes_(d.durationMinutes);
+          var st = ev.getStartTime();
+          ev.setTime(st, new Date(st.getTime() + durMin * 60000));
+          ev.setDescription(withDurationInDescription_(ev.getDescription(), durMin));
         }
       }
     } catch (calErr) {
@@ -2916,12 +3369,95 @@ function handleOwnerUpdateBooking(d) {
 }
 
 /**
+ * Resend the client-actionable "Please confirm your appointment" email (Confirm /
+ * Reschedule / Cancel buttons — the same email `sendTwoDayReminders` sends
+ * automatically 2 days out) for a CONFIRMED / CLIENT_CONFIRMED booking (admin
+ * app). Uses whatever client email is on the row right now, so fixing a bad
+ * email via handleOwnerUpdateBooking then resending sends to the corrected
+ * address. Reuses the row's existing action token (col J) — the same token
+ * already embedded in owner accept/reject links — so the Confirm/Reschedule/
+ * Cancel buttons work exactly like the automatic reminder's. Does not change
+ * sheet status or the calendar, but DOES stamp the "reminder already sent for
+ * this start time" marker (col K) so the automatic 2-day job doesn't also
+ * re-send it for the same appointment time. Admin-secret gated.
+ */
+function handleOwnerResendConfirmation(d) {
+  var secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  var eventId = String(d.eventId || '').trim();
+  if (!eventId) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  var ss = getCRMSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  var data = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][8]) === eventId) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+  if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'not_found' });
+
+  var row = data[rowIndex - 1];
+  var status = normalizeSheetStatus_(row[7]);
+  if (status !== 'CONFIRMED' && status !== 'CLIENT_CONFIRMED') {
+    return jsonResponse_({ status: 'error', message: 'not_confirmed' });
+  }
+
+  var clientEmail = String(row[6] || '').trim();
+  if (!clientEmail) return jsonResponse_({ status: 'error', message: 'no_email' });
+
+  var tok = String(row[9] || '').trim();
+  if (!tok) return jsonResponse_({ status: 'error', message: 'no_token' });
+
+  var clientName = String(row[1] || '').trim() || 'Client';
+  var service = row[3];
+  var tz = Session.getScriptTimeZone();
+  var neatD, neatTime;
+  var start = null;
+  var ev = null;
+  try {
+    var hintMs = appointmentRowStartMs_(row[4], row[5]);
+    var hint = isNaN(hintMs) ? null : new Date(hintMs);
+    ev = getActiveBookingEvent_(CalendarApp.getCalendarById(CALENDAR_ID), eventId, hint);
+  } catch (evErr) {
+    ev = null;
+  }
+  if (ev) {
+    start = ev.getStartTime();
+    neatD = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+    neatTime = Utilities.formatDate(start, tz, 'h:mm a');
+  } else {
+    neatD = formatSheetDateForEmail(row[4]);
+    neatTime = formatSheetTimeForEmail(row[5]);
+  }
+
+  var html = getTwoDayReminderEmailHtml(clientName, neatD, neatTime, service, eventId, tok);
+  MailApp.sendEmail({
+    to: clientEmail,
+    name: "Roni's Nail Studio",
+    subject: TWO_DAY_REMINDER_EMAIL_SUBJECT,
+    htmlBody: html,
+  });
+  if (start) {
+    sheet.getRange(rowIndex, 11).setValue(reminderSentKeyForStart_(start, tz));
+    SpreadsheetApp.flush();
+  }
+  Logger.log('handleOwnerResendConfirmation: sent to ' + clientEmail + ' for row ' + rowIndex + ' (' + clientName + ')');
+  return jsonResponse_({ status: 'success' });
+}
+
+/**
  * Owner reschedule (admin app). Moves a CONFIRMED / CLIENT_CONFIRMED booking to
  * a new date/time, keeping the existing duration. Unlike the client-facing
- * `reschedule` action, this does NOT enforce the public booking window or lead
- * time (the owner may book any valid studio slot), but it DOES still validate
- * studio hours and slot overlap. Emails the client the same "rescheduled"
- * email the website sends. Admin-secret gated; additive.
+ * `reschedule` action, this does NOT enforce the public booking window, lead
+ * time, or studio hours — the owner may move an appointment to any time,
+ * same as handleOwnerDirectBooking lets them create one at any time. Still
+ * blocks landing on top of another existing appointment. Emails the client
+ * the same "rescheduled" email the website sends. Admin-secret gated.
  */
 function handleOwnerRescheduleBooking(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
@@ -2959,7 +3495,10 @@ function handleOwnerRescheduleBooking(d) {
     break;
   }
   if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'not_found' });
-  if (rowStatus !== 'CONFIRMED' && rowStatus !== 'CLIENT_CONFIRMED') {
+  // BLOCKED = owner time block; movable like an appointment but with no client
+  // to email (blocks have no client email anyway — belt and braces below).
+  const isBlock = rowStatus === 'BLOCKED';
+  if (rowStatus !== 'CONFIRMED' && rowStatus !== 'CLIENT_CONFIRMED' && !isBlock) {
     return jsonResponse_({ status: 'error', message: 'not_confirmed' });
   }
 
@@ -2969,15 +3508,14 @@ function handleOwnerRescheduleBooking(d) {
   }
   let neatTimeStr = '';
   let neatDate = '';
+  let origStartMs = NaN; // the appointment's start BEFORE this move (decides "old")
   try {
     const currentEventId = String(sheet.getRange(rowIndex, 9).getValue() || eventId).trim() || eventId;
-    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-    const ev = cal.getEventById(currentEventId);
+    // Across both calendars — a time block lives on the blocks calendar.
+    const ev = getEventByIdAnyCalendar_(currentEventId);
     if (!ev) return jsonResponse_({ status: 'error', message: 'event_missing' });
+    origStartMs = ev.getStartTime().getTime();
     const durMin = effectiveDurationMinutesFromEvent_(ev);
-    if (!isBookingWithinStudioHours_(start, durMin)) {
-      return jsonResponse_({ status: 'error', message: 'invalid_day_or_time' });
-    }
     const newEnd = new Date(start.getTime() + durMin * 60000);
     if (slotOverlapsExistingCalendarEvents_(start, newEnd, [currentEventId])) {
       return jsonResponse_({ status: 'error', message: 'slot_unavailable' });
@@ -2986,7 +3524,8 @@ function handleOwnerRescheduleBooking(d) {
     ev.setTime(start, newEnd);
     neatTimeStr = Utilities.formatDate(start, Session.getScriptTimeZone(), 'h:mm a');
     // Preserve the event title (keeps the ✧ prefix on client-confirmed events).
-    applyBookingLocationToEvent_(ev, neatTimeStr, service);
+    // Blocks skip this — no service/location decoration on personal time.
+    if (!isBlock) applyBookingLocationToEvent_(ev, neatTimeStr, service);
     sheet.getRange(rowIndex, 5).setValue(start);
     sheet.getRange(rowIndex, 6).setValue(neatTimeStr);
     sheet.getRange(rowIndex, 11).setValue('');
@@ -2997,7 +3536,7 @@ function handleOwnerRescheduleBooking(d) {
     lock.releaseLock();
   }
 
-  if (clientEmail) {
+  if (!isBlock && clientEmail && !appointmentStartPassed_(origStartMs)) {
     const clientHtml = getRescheduledClientEmailHtml(clientName, neatDate, neatTimeStr, service);
     MailApp.sendEmail({
       to: clientEmail,
@@ -3006,18 +3545,21 @@ function handleOwnerRescheduleBooking(d) {
       htmlBody: clientHtml,
     });
   }
-  MailApp.sendEmail({
-    to: MY_EMAIL,
-    subject: 'Rescheduled (via app): ' + clientName,
-    htmlBody:
-      '<p style="font-family:sans-serif;"><strong>' +
-      escapeHtml(clientName) +
-      '</strong> moved to ' +
-      escapeHtml(neatDate) +
-      ' at ' +
-      escapeHtml(neatTimeStr) +
-      '.</p>',
-  });
+  // Moving your own time block doesn't warrant a notification email either.
+  if (!isBlock) {
+    MailApp.sendEmail({
+      to: MY_EMAIL,
+      subject: 'Rescheduled (via app): ' + clientName,
+      htmlBody:
+        '<p style="font-family:sans-serif;"><strong>' +
+        escapeHtml(clientName) +
+        '</strong> moved to ' +
+        escapeHtml(neatDate) +
+        ' at ' +
+        escapeHtml(neatTimeStr) +
+        '.</p>',
+    });
+  }
   return jsonResponse_({ status: 'success', dateLabel: neatDate, timeLabel: neatTimeStr });
 }
 
@@ -3070,6 +3612,8 @@ function handleOwnerListBookings(d) {
       // already embedded in the owner email links, so exposing it through this
       // admin-secret-gated endpoint adds no additional attack surface.
       ownerToken: String(row[9] || '').trim(),
+      // Notes the client typed when requesting (column 15 / index 14).
+      clientNotes: String(row[14] || '').trim(),
     });
   }
   out.sort(function (a, b) {
@@ -3084,11 +3628,22 @@ function handleOwnerListBookings(d) {
   // read fails, endMs stays null and the app falls back to a default block height.
   if (!isNaN(fromMs) && !isNaN(toMs)) {
     try {
-      const cal = CalendarApp.getCalendarById(CALENDAR_ID);
-      const evs = cal.getEvents(new Date(fromMs), new Date(toMs + 86400000));
+      // Scan every calendar the app writes to, not just the bookings one —
+      // owner time blocks live on the blocks calendar, and if they weren't
+      // found here they'd come back onCalendar:false and the app would hide them.
       const endById = Object.create(null);
-      for (var e = 0; e < evs.length; e++) {
-        endById[String(evs[e].getId()).split('@')[0]] = evs[e].getEndTime().getTime();
+      const calIds = appCalendarIds_();
+      for (var c = 0; c < calIds.length; c++) {
+        try {
+          const cal = CalendarApp.getCalendarById(calIds[c]);
+          if (!cal) continue;
+          const evs = cal.getEvents(new Date(fromMs), new Date(toMs + 86400000));
+          for (var e = 0; e < evs.length; e++) {
+            endById[String(evs[e].getId()).split('@')[0]] = evs[e].getEndTime().getTime();
+          }
+        } catch (oneCalErr) {
+          Logger.log('handleOwnerListBookings: calendar ' + calIds[c] + ' skipped: ' + oneCalErr);
+        }
       }
       // onCalendar = whether the booking's event still exists on the calendar.
       // If the owner deleted the event (cancelled it) but the sheet status hasn't
@@ -3118,7 +3673,17 @@ function collectCalendarWeekEvents_(rangeStart, rangeEndExclusive) {
       const evs = cal.getEvents(rangeStart, rangeEndExclusive);
       for (var i = 0; i < evs.length; i++) {
         const ev = evs[i];
-        out.push({ start: ev.getStartTime().getTime(), end: ev.getEndTime().getTime(), title: String(ev.getTitle() || '').trim() || '(No title)', allDay: ev.isAllDayEvent(), calendar: key });
+        // eventId is normalized the same way handleOwnerListBookings normalizes
+        // booking event ids, so the admin app can drop the calendar events that
+        // are already drawn from the sheet and keep only the extra ones.
+        out.push({
+          eventId: String(ev.getId() || '').split('@')[0],
+          start: ev.getStartTime().getTime(),
+          end: ev.getEndTime().getTime(),
+          title: String(ev.getTitle() || '').trim() || '(No title)',
+          allDay: ev.isAllDayEvent(),
+          calendar: key,
+        });
       }
     } catch (err) {
       Logger.log('collectCalendarWeekEvents_ ' + key + ' ' + err);
@@ -3126,6 +3691,7 @@ function collectCalendarWeekEvents_(rangeStart, rangeEndExclusive) {
   }
   addCal(CALENDAR_ID, 'studio');
   addCal(PERSONAL_CALENDAR_ID, 'personal');
+  addCal(BLOCKS_CALENDAR_ID, 'blocks');
   out.sort(function (a, b) { return a.start - b.start; });
   return out;
 }
@@ -3180,7 +3746,7 @@ function getTwoDayReminderEmailHtml(name, date, time, service, eventId, token) {
   const urlCancel = buildBookingActionUrl(qCancel);
   const urlReschedule = buildRescheduleUrl(eventId, token);
   const rescheduleBlock = urlReschedule ? '<a href="' + urlReschedule + '" style="background-color:#fff;color:#111;border:1px solid #111;padding:12px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Reschedule</a>' : '<p style="font-size:14px;color:#666;">To reschedule, visit our website and book a new appointment time.</p>';
-  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:600;font-size:20px;text-align:center;line-height:1.35;">Please confirm your appointment</h2><p style="font-size:14px;color:#555;text-align:center;margin:8px 0 20px 0;">Your visit is in 2 days -- please let us know of any changes.</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Hi ' + n + ',</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Please tap <strong>Confirm</strong> if you&rsquo;re all set. If you need to change plans, use <strong>Reschedule</strong> or <strong>Cancel</strong>.</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + (emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service) + emailDetailRow('Location', STUDIO_ADDRESS)) + '</tbody></table><div style="text-align:center;"><a href="' + urlConfirm + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:600;display:block;margin-bottom:12px;">Confirm</a>' + rescheduleBlock + '<a href="' + urlCancel + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Cancel</a></div><p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>';
+  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:600;font-size:20px;text-align:center;line-height:1.35;margin-bottom:20px;">Please confirm your appointment</h2><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Hi ' + n + ',</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Please tap <strong>Confirm</strong> if you&rsquo;re all set. If you need to change plans, use <strong>Reschedule</strong> or <strong>Cancel</strong>.</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + (emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service) + emailDetailRow('Location', STUDIO_ADDRESS)) + '</tbody></table><div style="text-align:center;"><a href="' + urlConfirm + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:600;display:block;margin-bottom:12px;">Confirm</a>' + rescheduleBlock + '<a href="' + urlCancel + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Cancel</a></div><p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>';
 }
 
 function getAlternateProposalClientEmailHtml(name, origDate, origTime, newDate, newTime, service, eventId, modToken) {
@@ -3600,6 +4166,7 @@ function slotOverlapsExistingCalendarEvents_(slotStart, slotEnd, ignoreEventIds)
   }
   if (overlapsOnCalendar(CALENDAR_ID)) return true;
   if (overlapsOnCalendar(PERSONAL_CALENDAR_ID)) return true;
+  if (overlapsOnCalendar(BLOCKS_CALENDAR_ID)) return true; // owner time blocks
   return false;
 }
 
