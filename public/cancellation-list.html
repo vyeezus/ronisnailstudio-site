@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.png" type="image/png">
+    <title>Cancellation list | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .wl-wrap { max-width: 460px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+        .wl-title { font-family: var(--font-heading); font-weight: 300; letter-spacing: 2px;
+                    text-transform: uppercase; font-size: 1.15rem; color: var(--text-main);
+                    text-align: center; margin-bottom: .4rem; }
+        .wl-sub { text-align: center; color: var(--text-muted); font-size: .92rem;
+                  line-height: 1.55; margin-bottom: 1.75rem; }
+        .wl-label { display: block; font-size: .68rem; letter-spacing: 1.4px; text-transform: uppercase;
+                    font-weight: 600; color: var(--text-muted); margin-bottom: .35rem; }
+        .wl-field { width: 100%; background: #fff; border: 1px solid var(--border-line);
+                    border-radius: 10px; padding: .8rem .9rem; font-family: var(--font-body);
+                    font-size: 1rem; color: var(--text-main); margin-bottom: 1rem; }
+        .wl-field:focus { outline: none; border-color: var(--text-accent); }
+        textarea.wl-field { min-height: 72px; resize: vertical; }
+        .wl-two { display: flex; gap: .7rem; }
+        .wl-two > div { flex: 1; }
+        .wl-btn { width: 100%; background: var(--button-bg); color: #fff; border: 0;
+                  border-radius: 10px; padding: 1rem; font-family: var(--font-body);
+                  font-size: 1rem; font-weight: 600; letter-spacing: .5px; cursor: pointer; }
+        .wl-btn:disabled { opacity: .55; cursor: default; }
+        .wl-note { text-align: center; color: var(--text-muted); font-size: .8rem;
+                   line-height: 1.5; margin-top: 1rem; }
+        .wl-msg { border-radius: 12px; padding: 1.1rem 1.25rem; font-size: .95rem;
+                  line-height: 1.6; text-align: center; }
+        .wl-msg.err { background: rgba(183,94,122,.10); border: 1px solid rgba(183,94,122,.25); color: #8b3a52; margin-bottom: 1rem; }
+        .wl-msg.ok  { background: rgba(100,140,100,.12); border: 1px solid rgba(100,140,100,.25); color: #2d5a2d; }
+        .wl-hide { display: none; }
+    </style>
+</head>
+<body>
+    <div class="wl-wrap">
+        <div id="form-area">
+            <h1 class="wl-title">Cancellation list</h1>
+            <p class="wl-sub">Can't find a time that works? Add yourself here and I'll email you
+               the moment something opens up.</p>
+
+            <div id="err" class="wl-msg err wl-hide"></div>
+
+            <form id="wl-form" novalidate>
+                <label class="wl-label" for="f-name">Full name</label>
+                <input class="wl-field" id="f-name" type="text" autocomplete="name" required>
+
+                <label class="wl-label" for="f-email">Email</label>
+                <input class="wl-field" id="f-email" type="email" autocomplete="email" inputmode="email" required>
+
+                <label class="wl-label" for="f-phone">Phone (optional)</label>
+                <input class="wl-field" id="f-phone" type="tel" autocomplete="tel" inputmode="tel">
+
+                <label class="wl-label" for="f-service">What are you after? (optional)</label>
+                <input class="wl-field" id="f-service" type="text" placeholder="e.g. Gel X Medium, simple art">
+
+                <label class="wl-label">Dates that work (optional)</label>
+                <div class="wl-two">
+                    <div>
+                        <input class="wl-field" id="f-from" type="date" aria-label="Earliest date">
+                    </div>
+                    <div>
+                        <input class="wl-field" id="f-to" type="date" aria-label="Latest date">
+                    </div>
+                </div>
+
+                <label class="wl-label" for="f-notes">Anything else? (optional)</label>
+                <textarea class="wl-field" id="f-notes" placeholder="Weekends only, mornings are best…"></textarea>
+
+                <button class="wl-btn" id="f-submit" type="submit">Add me to the list</button>
+                <p class="wl-note">Openings go out to everyone on the list at once and are
+                   first come, first served. Leave the dates blank to hear about any opening.</p>
+            </form>
+        </div>
+
+        <div id="done" class="wl-msg ok wl-hide"></div>
+    </div>
+
+<script>
+(function () {
+    'use strict';
+    var API = '/api/booking';
+    var $ = function (id) { return document.getElementById(id); };
+
+    // Don't offer dates in the past.
+    var todayYmd = new Date().toISOString().slice(0, 10);
+    $('f-from').min = todayYmd;
+    $('f-to').min = todayYmd;
+
+    $('wl-form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var name = $('f-name').value.trim();
+        var email = $('f-email').value.trim();
+        var err = $('err');
+        err.classList.add('wl-hide');
+
+        if (!name) { $('f-name').focus(); return; }
+        if (!email || email.indexOf('@') < 0) { $('f-email').focus(); return; }
+
+        var from = $('f-from').value;
+        var to = $('f-to').value;
+        if (from && to && to < from) {
+            err.textContent = 'That date range is backwards — the second date should be after the first.';
+            err.classList.remove('wl-hide');
+            return;
+        }
+
+        var btn = $('f-submit');
+        btn.disabled = true;
+        btn.textContent = 'Adding you…';
+
+        fetch(API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                joinWaitlist: true,
+                clientName: name,
+                email: email,
+                phone: $('f-phone').value.trim(),
+                service: $('f-service').value.trim(),
+                fromDate: from,
+                toDate: to,
+                notes: $('f-notes').value.trim()
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res || res.status !== 'success') {
+                    btn.disabled = false;
+                    btn.textContent = 'Add me to the list';
+                    err.textContent = 'Something went wrong. Please try again, or message Roni directly.';
+                    err.classList.remove('wl-hide');
+                    return;
+                }
+                $('form-area').classList.add('wl-hide');
+                var box = $('done');
+                box.innerHTML = '<strong>You’re on the list!</strong><br>' +
+                    'I’ll email you at ' + email.replace(/[<>&]/g, '') +
+                    ' as soon as a spot opens up.<br><br>' +
+                    '<a href="index.html">Back to the site</a>';
+                box.classList.remove('wl-hide');
+            })
+            .catch(function () {
+                btn.disabled = false;
+                btn.textContent = 'Add me to the list';
+                err.textContent = 'Couldn’t reach the studio just now. Please check your connection and try again.';
+                err.classList.remove('wl-hide');
+            });
+    });
+})();
+</script>
+</body>
+</html>

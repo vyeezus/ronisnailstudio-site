@@ -24,6 +24,13 @@ const HOURS_SHEET_NAME = 'StudioHours';
  * in column A rather than being implied by row order.
  */
 const CLIENT_NOTES_SHEET_NAME = 'ClientNotes';
+/**
+ * Cancellation list. Clients join from the website when they can't find a time;
+ * when a slot frees up everyone matching is emailed the SAME booking link at
+ * once and the first to fill it in gets it (handleClaimInvite re-checks status
+ * inside a lock, so the race resolves to exactly one winner).
+ */
+const WAITLIST_SHEET_NAME = 'Waitlist';
 const PENDING_COLOR = '5';
 /**
  * Calendar that owner time blocks are created on — deliberately NOT CALENDAR_ID.
@@ -2187,6 +2194,19 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.claimInvite)) {
       return handleClaimInvite(d);
     }
+    // Public: a client adding themselves to the cancellation list.
+    if (isJsonBoolTrue_(d.joinWaitlist)) {
+      return handlePublicJoinWaitlist_(d);
+    }
+    if (isJsonBoolTrue_(d.ownerListWaitlist)) {
+      return handleOwnerListWaitlist(d);
+    }
+    if (isJsonBoolTrue_(d.ownerRemoveWaitlist)) {
+      return handleOwnerRemoveWaitlist(d);
+    }
+    if (isJsonBoolTrue_(d.ownerNotifyWaitlist)) {
+      return handleOwnerNotifyWaitlist(d);
+    }
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
     }
@@ -2822,6 +2842,223 @@ function handleOwnerCreateBlock(d) {
   SpreadsheetApp.flush();
   clearBookingEndpointCaches_();
   return jsonResponse_({ status: 'success', eventId: ev.getId() });
+}
+
+/** The Waitlist tab, created on first use so no manual sheet setup is needed. */
+function getWaitlistSheet_() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(WAITLIST_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(WAITLIST_SHEET_NAME);
+    sh.appendRow(['joined', 'name', 'email', 'phone', 'service', 'fromDate', 'toDate', 'notes', 'status']);
+    sh.setFrozenRows(1);
+    // fromDate/toDate are yyyy-MM-dd strings; keep them text so Sheets can't
+    // turn them into serials (see sheetCellToScheduleKey_ for that same trap).
+    sh.getRange(1, 6, sh.getMaxRows(), 2).setNumberFormat('@');
+  }
+  return sh;
+}
+
+function waitlistRowToEntry_(row, rowIndex) {
+  return {
+    rowIndex: rowIndex,
+    joinedMs: row[0] instanceof Date ? row[0].getTime() : null,
+    name: String(row[1] || '').trim(),
+    email: String(row[2] || '').trim(),
+    phone: String(row[3] || '').trim(),
+    service: String(row[4] || '').trim(),
+    fromDate: String(row[5] || '').trim(),
+    toDate: String(row[6] || '').trim(),
+    notes: String(row[7] || '').trim(),
+    status: normalizeSheetStatus_(row[8]) || 'ACTIVE',
+  };
+}
+
+/** Does a waitlist entry want a slot on `ymd`? Blank dates mean "any time". */
+function waitlistEntryWantsDate_(entry, ymd) {
+  if (entry.fromDate && ymd < entry.fromDate) return false;
+  if (entry.toDate && ymd > entry.toDate) return false;
+  return true;
+}
+
+/**
+ * Client joins the cancellation list from the website. Public (no token): it
+ * only ever appends a request, and the reply reveals nothing about the calendar.
+ */
+function handlePublicJoinWaitlist_(d) {
+  const name = String(d.clientName || '').trim();
+  const email = String(d.email || '').trim();
+  if (!name || !email || email.indexOf('@') < 0) {
+    return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  }
+  const ymdOk = function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); };
+  const fromDate = ymdOk(String(d.fromDate || '').trim()) ? String(d.fromDate).trim() : '';
+  const toDate = ymdOk(String(d.toDate || '').trim()) ? String(d.toDate).trim() : '';
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getWaitlistSheet_();
+    const data = sh.getDataRange().getValues();
+    // Re-joining just refreshes the existing entry rather than stacking
+    // duplicates that would each get their own copy of every blast.
+    for (var i = 1; i < data.length; i++) {
+      const e = waitlistRowToEntry_(data[i], i + 1);
+      if (e.email.toLowerCase() === email.toLowerCase() && e.status === 'ACTIVE') {
+        sh.getRange(i + 1, 1, 1, 9).setValues([[
+          new Date(), name, email, String(d.phone || '').trim(), String(d.service || '').trim(),
+          fromDate, toDate, String(d.notes || '').trim(), 'ACTIVE',
+        ]]);
+        SpreadsheetApp.flush();
+        return jsonResponse_({ status: 'success', updated: true });
+      }
+    }
+    sh.appendRow([
+      new Date(), name, email, String(d.phone || '').trim(), String(d.service || '').trim(),
+      fromDate, toDate, String(d.notes || '').trim(), 'ACTIVE',
+    ]);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Cancellation list: ' + name,
+    htmlBody:
+      '<p style="font-family:sans-serif;">Someone joined your cancellation list.</p>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fafafa;border-radius:8px;"><tbody>' +
+      emailDetailRow('Name', name) +
+      emailDetailRow('Email', email) +
+      emailDetailRow('Phone', String(d.phone || '').trim() || '—') +
+      emailDetailRow('Service', String(d.service || '').trim() || 'Any') +
+      emailDetailRow('Dates', (fromDate || 'any') + ' → ' + (toDate || 'any')) +
+      '</tbody></table>' +
+      (String(d.notes || '').trim()
+        ? '<p style="font-family:sans-serif;"><strong>Note:</strong> ' + escapeHtml(String(d.notes).trim()) + '</p>'
+        : ''),
+  });
+  return jsonResponse_({ status: 'success' });
+}
+
+function handleOwnerListWaitlist(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const sh = getWaitlistSheet_();
+  const data = sh.getDataRange().getValues();
+  const out = [];
+  for (var i = 1; i < data.length; i++) {
+    const e = waitlistRowToEntry_(data[i], i + 1);
+    if (!e.email || e.status !== 'ACTIVE') continue;
+    out.push(e);
+  }
+  return jsonResponse_({ status: 'success', waitlist: out });
+}
+
+function handleOwnerRemoveWaitlist(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const email = String(d.email || '').trim().toLowerCase();
+  if (!email) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getWaitlistSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][2] || '').trim().toLowerCase() === email) sh.deleteRow(i + 1);
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * Blast a freed-up slot to everyone on the cancellation list who wants that date.
+ *
+ * Creates ONE held invite and emails the SAME link to every match — first to
+ * fill in their details wins, and handleClaimInvite's in-lock status re-check
+ * means the losers get a clean "already claimed" page rather than a double
+ * booking. Returns how many were emailed so the app can say so.
+ */
+function handleOwnerNotifyWaitlist(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const dateStr = d.date ? String(d.date).split('T')[0].trim() : '';
+  const timeStr = String(d.time || '').trim();
+  const service = String(d.service || '').trim() || 'Your appointment';
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !timeStr) {
+    return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  }
+
+  const sh = getWaitlistSheet_();
+  const data = sh.getDataRange().getValues();
+  const targets = [];
+  for (var i = 1; i < data.length; i++) {
+    const e = waitlistRowToEntry_(data[i], i + 1);
+    if (!e.email || e.status !== 'ACTIVE') continue;
+    if (!waitlistEntryWantsDate_(e, dateStr)) continue;
+    targets.push(e);
+  }
+  if (!targets.length) return jsonResponse_({ status: 'success', notified: 0 });
+
+  // Reuse the curated-link machinery so the slot is genuinely held while the
+  // list races for it — otherwise the website could sell it out from under them.
+  const created = handleOwnerCreateInvite({
+    adminSecret: d.adminSecret,
+    service: service,
+    date: dateStr,
+    time: timeStr,
+    durationMinutes: d.durationMinutes,
+    label: 'Cancellation list',
+  });
+  const createdObj = JSON.parse(created.getContent());
+  if (createdObj.status !== 'success') return created;
+
+  const tz = Session.getScriptTimeZone();
+  const start = parseYmdAndTimeLocal_(dateStr, convertTo24Hour(timeStr));
+  const neatD = Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy');
+  const neatTime = Utilities.formatDate(start, tz, 'h:mm a');
+  let sent = 0;
+  for (var t = 0; t < targets.length; t++) {
+    try {
+      MailApp.sendEmail({
+        to: targets[t].email,
+        name: "Roni's Nail Studio",
+        subject: 'A spot just opened — ' + neatD,
+        htmlBody: getWaitlistOpeningEmailHtml(targets[t].name, neatD, neatTime, service, createdObj.url),
+      });
+      sent++;
+    } catch (mailErr) {
+      Logger.log('handleOwnerNotifyWaitlist: email failed for ' + targets[t].email + ': ' + mailErr);
+    }
+  }
+  return jsonResponse_({ status: 'success', notified: sent, url: createdObj.url, eventId: createdObj.eventId });
+}
+
+function getWaitlistOpeningEmailHtml(name, date, time, service, url) {
+  const n = escapeHtml(String(name || '').trim() || 'there');
+  const rows = emailDetailRow('Date', date) + emailDetailRow('Time', time) + emailDetailRow('Service', service) + emailDetailRow('Location', STUDIO_ADDRESS);
+  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;">' +
+    '<h2 style="color:#111;font-weight:600;font-size:20px;text-align:center;line-height:1.35;margin-bottom:20px;">A spot just opened up</h2>' +
+    '<p style="font-size:16px;color:#1a1a1a;line-height:1.6;">Hi ' + n + ',</p>' +
+    '<p style="font-size:16px;color:#1a1a1a;line-height:1.6;">You asked to hear about cancellations — this time just became available. ' +
+    'It\'s <strong>first come, first served</strong>, so grab it now if it works for you.</p>' +
+    '<table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + rows + '</tbody></table>' +
+    '<div style="text-align:center;"><a href="' + url + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:600;display:block;">Claim this appointment</a></div>' +
+    '<p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">If someone books it first you\'ll see a note on that page — you\'ll stay on the list for the next opening.</p>' +
+    '<p style="font-size:13px;color:#999;text-align:center;">Roni\'s Nail Studio</p></div>';
 }
 
 function buildInviteUrl_(eventId, token) {
