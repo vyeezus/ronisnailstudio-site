@@ -3178,17 +3178,31 @@ function handleInviteDetailsGet_(e) {
     if (!isNaN(startMs) && startMs < Date.now()) return out({ ok: false, error: 'expired' });
     const tz = Session.getScriptTimeZone();
     var durMin = 0;
+    var dateLabel = '';
+    var timeLabel = '';
+    // The CALENDAR EVENT is the source of truth for when the appointment is —
+    // same precedence sendTwoDayReminders and resendConfirmationEmail use. The
+    // sheet's time cell is a round-tripped string Sheets may have re-parsed
+    // (it was showing clients 11:30 PM for an 11:30 AM slot), so only fall back
+    // to it if the event is genuinely gone.
     try {
       const ev = getEventByIdAnyCalendar_(eventId);
-      if (ev) durMin = effectiveDurationMinutesFromEvent_(ev);
+      if (ev) {
+        durMin = effectiveDurationMinutesFromEvent_(ev);
+        const st = ev.getStartTime();
+        dateLabel = Utilities.formatDate(st, tz, 'EEEE, MMMM d, yyyy');
+        timeLabel = Utilities.formatDate(st, tz, 'h:mm a');
+      }
     } catch (err) {
       durMin = 0;
     }
+    if (!dateLabel) dateLabel = formatSheetDateForEmail(data[i][4]);
+    if (!timeLabel) timeLabel = formatSheetTimeForEmail(data[i][5]);
     return out({
       ok: true,
       service: String(data[i][3] || '').trim(),
-      dateLabel: formatSheetDateForEmail(data[i][4]),
-      timeLabel: formatSheetTimeForEmail(data[i][5]),
+      dateLabel: dateLabel,
+      timeLabel: timeLabel,
       durationMinutes: durMin,
       studioAddress: STUDIO_ADDRESS,
     });
