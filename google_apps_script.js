@@ -2859,6 +2859,24 @@ function getWaitlistSheet_() {
   return sh;
 }
 
+/**
+ * Normalize a waitlist date cell to yyyy-MM-dd. Sheets re-parses date-looking
+ * strings into real Date values, and blindly stringifying one gives
+ * "Fri Aug 14 2026 00:00:00 GMT-0400 (…)" — which is what leaked into the app.
+ * Returns '' for anything unusable, which the UI reads as "any date".
+ */
+function waitlistCellToYmd_(raw) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
+    return Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) return Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return '';
+}
+
 function waitlistRowToEntry_(row, rowIndex) {
   return {
     rowIndex: rowIndex,
@@ -2867,8 +2885,8 @@ function waitlistRowToEntry_(row, rowIndex) {
     email: String(row[2] || '').trim(),
     phone: String(row[3] || '').trim(),
     service: String(row[4] || '').trim(),
-    fromDate: String(row[5] || '').trim(),
-    toDate: String(row[6] || '').trim(),
+    fromDate: waitlistCellToYmd_(row[5]),
+    toDate: waitlistCellToYmd_(row[6]),
     notes: String(row[7] || '').trim(),
     status: normalizeSheetStatus_(row[8]) || 'ACTIVE',
   };
