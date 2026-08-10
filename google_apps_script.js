@@ -2957,6 +2957,11 @@ function handlePublicJoinWaitlist_(d) {
         ? '<p style="font-family:sans-serif;"><strong>Note:</strong> ' + escapeHtml(String(d.notes).trim()) + '</p>'
         : ''),
   });
+  pushToOwner_(
+    'New on your cancellation list',
+    name + ' is waiting' + (fromDate || toDate ? ' for ' + (fromDate || 'any') + ' → ' + (toDate || 'any') : ' for any opening') + '.',
+    { type: 'waitlist' }
+  );
   return jsonResponse_({ status: 'success' });
 }
 
@@ -3328,6 +3333,11 @@ function handleClaimInvite(d) {
       '</tbody></table>' +
       (clientNotes ? '<p style="font-family:sans-serif;"><strong>Their note:</strong> ' + escapeHtml(clientNotes) + '</p>' : ''),
   });
+  pushToOwner_(
+    'Booking link claimed',
+    clientName + ' confirmed ' + neatD + ' at ' + neatTime + '.',
+    { type: 'claimed' }
+  );
   return jsonResponse_({ status: 'success', dateLabel: neatD, timeLabel: neatTime, service: service });
 }
 
@@ -3633,6 +3643,23 @@ function sendExpoPush_(tokens, title, body, data) {
     });
   } catch (err) {
     Logger.log('sendExpoPush_ error: ' + err);
+  }
+}
+
+/**
+ * Push to every registered owner device. Unlike checkNewBookingsAndPush — which
+ * has to POLL because public website bookings land via a different deployment —
+ * the events using this happen inside a request we're already handling, so the
+ * notification can fire immediately. Never throws: a failed push must not fail
+ * the booking or waitlist write that triggered it.
+ */
+function pushToOwner_(title, body, data) {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(PROP_PUSH_TOKENS);
+    var tokens = raw ? JSON.parse(raw) : [];
+    if (tokens && tokens.length) sendExpoPush_(tokens, title, body, data || {});
+  } catch (err) {
+    Logger.log('pushToOwner_ error: ' + err);
   }
 }
 
