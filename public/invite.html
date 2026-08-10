@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.png" type="image/png">
+    <title>Confirm your appointment | Roni's Nail Studio</title>
+    <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;300;400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .inv-wrap { max-width: 460px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+        .inv-title { font-family: var(--font-heading); font-weight: 300; letter-spacing: 2px;
+                     text-transform: uppercase; font-size: 1.15rem; color: var(--text-main);
+                     text-align: center; margin-bottom: .4rem; }
+        .inv-sub { text-align: center; color: var(--text-muted); font-size: .92rem;
+                   line-height: 1.55; margin-bottom: 1.75rem; }
+        .inv-card { background: rgba(255,255,255,.55); border: 1px solid var(--border-line);
+                    border-radius: 14px; padding: 1.1rem 1.25rem; margin-bottom: 1.5rem; }
+        .inv-row { display: flex; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid var(--border-line); }
+        .inv-row:last-child { border-bottom: 0; }
+        .inv-k { font-size: .68rem; letter-spacing: 1.4px; text-transform: uppercase;
+                 font-weight: 600; color: var(--text-muted); width: 74px; flex: none; padding-top: .15rem; }
+        .inv-v { font-size: .95rem; color: var(--text-main); flex: 1; }
+        .inv-label { display: block; font-size: .68rem; letter-spacing: 1.4px; text-transform: uppercase;
+                     font-weight: 600; color: var(--text-muted); margin-bottom: .35rem; }
+        .inv-field { width: 100%; background: #fff; border: 1px solid var(--border-line);
+                     border-radius: 10px; padding: .8rem .9rem; font-family: var(--font-body);
+                     font-size: 1rem; color: var(--text-main); margin-bottom: 1rem; }
+        .inv-field:focus { outline: none; border-color: var(--text-accent); }
+        textarea.inv-field { min-height: 76px; resize: vertical; }
+        .inv-btn { width: 100%; background: var(--button-bg); color: #fff; border: 0;
+                   border-radius: 10px; padding: 1rem; font-family: var(--font-body);
+                   font-size: 1rem; font-weight: 600; letter-spacing: .5px; cursor: pointer; }
+        .inv-btn:disabled { opacity: .55; cursor: default; }
+        .inv-note { text-align: center; color: var(--text-muted); font-size: .8rem;
+                    line-height: 1.5; margin-top: 1rem; }
+        .inv-msg { border-radius: 12px; padding: 1.1rem 1.25rem; font-size: .95rem;
+                   line-height: 1.6; text-align: center; }
+        .inv-msg.err { background: rgba(183,94,122,.10); border: 1px solid rgba(183,94,122,.25); color: #8b3a52; }
+        .inv-msg.ok  { background: rgba(100,140,100,.12); border: 1px solid rgba(100,140,100,.25); color: #2d5a2d; }
+        .inv-hide { display: none; }
+    </style>
+</head>
+<body>
+    <div class="inv-wrap">
+        <div id="loading" class="inv-sub">Loading your appointment…</div>
+
+        <div id="invalid" class="inv-msg err inv-hide"></div>
+
+        <div id="form-area" class="inv-hide">
+            <h1 class="inv-title">Confirm your appointment</h1>
+            <p class="inv-sub">Roni saved this time for you. Add your details below to lock it in.</p>
+
+            <div class="inv-card">
+                <div class="inv-row"><span class="inv-k">Date</span><span class="inv-v" id="d-date"></span></div>
+                <div class="inv-row"><span class="inv-k">Time</span><span class="inv-v" id="d-time"></span></div>
+                <div class="inv-row"><span class="inv-k">Service</span><span class="inv-v" id="d-service"></span></div>
+                <div class="inv-row"><span class="inv-k">Location</span><span class="inv-v" id="d-addr"></span></div>
+            </div>
+
+            <form id="inv-form" novalidate>
+                <label class="inv-label" for="f-name">Full name</label>
+                <input class="inv-field" id="f-name" type="text" autocomplete="name" required>
+
+                <label class="inv-label" for="f-email">Email</label>
+                <input class="inv-field" id="f-email" type="email" autocomplete="email" inputmode="email" required>
+
+                <label class="inv-label" for="f-phone">Phone</label>
+                <input class="inv-field" id="f-phone" type="tel" autocomplete="tel" inputmode="tel">
+
+                <label class="inv-label" for="f-notes">Anything I should know? (optional)</label>
+                <textarea class="inv-field" id="f-notes" placeholder="Inspo, allergies, questions…"></textarea>
+
+                <button class="inv-btn" id="f-submit" type="submit">Confirm my appointment</button>
+                <p class="inv-note">You'll get a confirmation email right away. Please review the
+                   <a href="index.html#policies">studio policies</a> — a deposit is required for first-time clients.</p>
+            </form>
+        </div>
+
+        <div id="done" class="inv-msg ok inv-hide"></div>
+    </div>
+
+<script>
+(function () {
+    'use strict';
+    // Same-origin Netlify proxy in front of the Apps Script web app, so this page
+    // never talks to script.google.com directly (and dodges its CORS rules).
+    var API = '/api/booking';
+    var params = new URLSearchParams(window.location.search);
+    var eventId = params.get('eventId') || '';
+    var token = params.get('token') || '';
+
+    var $ = function (id) { return document.getElementById(id); };
+    var show = function (el) { el.classList.remove('inv-hide'); };
+    var hide = function (el) { el.classList.add('inv-hide'); };
+
+    var MESSAGES = {
+        bad_link: 'This booking link isn’t valid. Please ask Roni for a new one.',
+        already_claimed: 'This appointment has already been confirmed. If that wasn’t you, message Roni.',
+        cancelled: 'This appointment was cancelled. Please ask Roni for a new link.',
+        expired: 'This time has already passed. Please ask Roni for a new link.',
+        slot_unavailable: 'That time was just taken. Please message Roni to find another.',
+        server_busy: 'The studio’s calendar is busy right now — please try again in a moment.'
+    };
+    function friendly(code) {
+        return MESSAGES[code] || 'Something went wrong. Please message Roni and she’ll sort it out.';
+    }
+    function fail(code) {
+        hide($('loading'));
+        hide($('form-area'));
+        var box = $('invalid');
+        box.textContent = friendly(code);
+        show(box);
+    }
+
+    if (!eventId || !token) { fail('bad_link'); return; }
+
+    // ---- Load the invite -------------------------------------------------
+    fetch(API + '?action=invite_details&eventId=' + encodeURIComponent(eventId) +
+              '&token=' + encodeURIComponent(token), { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data || !data.ok) { fail(data && data.error); return; }
+            $('d-date').textContent = data.dateLabel || '—';
+            $('d-time').textContent = data.timeLabel || '—';
+            $('d-service').textContent = data.service || '—';
+            $('d-addr').textContent = data.studioAddress || '';
+            hide($('loading'));
+            show($('form-area'));
+        })
+        .catch(function () { fail('network'); });
+
+    // ---- Claim it --------------------------------------------------------
+    $('inv-form').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var name = $('f-name').value.trim();
+        var email = $('f-email').value.trim();
+        if (!name) { $('f-name').focus(); return; }
+        if (!email || email.indexOf('@') < 0) { $('f-email').focus(); return; }
+
+        var btn = $('f-submit');
+        btn.disabled = true;
+        btn.textContent = 'Confirming…';
+
+        fetch(API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                claimInvite: true,
+                eventId: eventId,
+                token: token,
+                clientName: name,
+                email: email,
+                phone: $('f-phone').value.trim(),
+                clientNotes: $('f-notes').value.trim()
+            })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res || res.status !== 'success') {
+                    btn.disabled = false;
+                    btn.textContent = 'Confirm my appointment';
+                    fail(res && res.message);
+                    return;
+                }
+                hide($('form-area'));
+                var box = $('done');
+                box.innerHTML = '<strong>You’re booked!</strong><br>' +
+                    (res.dateLabel || '') + '<br>' + (res.timeLabel || '') +
+                    '<br><br>A confirmation email is on its way.';
+                show(box);
+            })
+            .catch(function () {
+                btn.disabled = false;
+                btn.textContent = 'Confirm my appointment';
+                fail('network');
+            });
+    });
+})();
+</script>
+</body>
+</html>

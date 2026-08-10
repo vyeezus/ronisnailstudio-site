@@ -51,6 +51,8 @@ const PROP_DISABLE_CALENDAR_SYNC = 'DISABLE_CALENDAR_SYNC';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzdT_rV3dR7Th4VHeLE3uJcyTPr4bI-6uy-_Im6xz-nZ0rGPToj85zy7Is7LmpNVS0Wwg/exec';
 const BOOKING_ACTION_HTML_BASE = 'https://ronisnailstudio.com/api/booking';
 const RESCHEDULE_PAGE_BASE = 'https://ronisnailstudio.com/reschedule.html';
+/** Landing page for a curated booking link (see handleOwnerCreateInvite). */
+const INVITE_PAGE_BASE = 'https://ronisnailstudio.com/invite.html';
 const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request.html';
 const OWNER_REJECT_PAGE_BASE = 'https://ronisnailstudio.com/reject-booking.html';
 const STUDIO_ADDRESS = '150 Wood Rd, Braintree, MA, Suite 304-E';
@@ -501,6 +503,18 @@ function defaultWorkHoursObject_() {
 
 function sheetCellToScheduleKey_(raw) {
   if (raw instanceof Date && !isNaN(raw.getTime())) {
+    // Column A holds BOTH day-of-week numbers (0-6) and yyyy-MM-dd override keys,
+    // so a cell that once held a date keeps date formatting. A day-of-week
+    // written into such a cell is stored as a Sheets serial and reads back as a
+    // Date near the 1899-12-30 epoch — Saturday (6) becomes 1900-01-05. Recover
+    // the day number instead of inventing a bogus 1900 "date override", which is
+    // what silently dropped whole weekdays from the weekly schedule.
+    if (raw.getFullYear() < 1910) {
+      const serial = Math.round(
+        (new Date(raw.getFullYear(), raw.getMonth(), raw.getDate()).getTime() - new Date(1899, 11, 30).getTime()) / 86400000
+      );
+      if (serial >= 0 && serial <= 6) return { kind: 'dow', dow: serial };
+    }
     return { kind: 'date', ymd: Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd') };
   }
   const s = String(raw == null ? '' : raw).trim();
@@ -1437,6 +1451,12 @@ function handleAdminSetWorkHours(d) {
   if (!sh) sh = ss.insertSheet(HOURS_SHEET_NAME);
   sh.clear();
   sh.appendRow(['day', 'start', 'end']);
+  // Column A mixes day-of-week numbers (0-6) with yyyy-MM-dd override keys.
+  // Pin it to plain text so Sheets can't auto-convert either kind into a date
+  // serial: a bare 6 landing in a date-formatted cell was being stored as
+  // 1900-01-05, which quietly turned "open Saturdays" into a junk 1900 override
+  // and dropped Saturday from the weekly schedule entirely.
+  sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
 
   const rows = [];
   let anyOpen = false;
@@ -1446,7 +1466,8 @@ function handleAdminSetWorkHours(d) {
     const st = Math.floor(Number(h.start));
     const en = Math.floor(Number(h.end));
     if (!isFinite(st) || !isFinite(en) || st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
-    rows.push([day, st, en]);
+    // String, to match the plain-text column and stay un-coercible to a date.
+    rows.push([String(day), st, en]);
     anyOpen = true;
   }
 
@@ -2059,6 +2080,10 @@ function doGet(e) {
     }
   }
 
+  if (action === 'invite_details') {
+    return handleInviteDetailsGet_(e);
+  }
+
   if (action === 'reschedule_meta') {
     const callback = e.parameter.callback;
     function wrapRescheduleMeta_(obj) {
@@ -2154,6 +2179,13 @@ function doPost(e) {
     }
     if (isJsonBoolTrue_(d.ownerMergeClients)) {
       return handleOwnerMergeClients(d);
+    }
+    if (isJsonBoolTrue_(d.ownerCreateInvite)) {
+      return handleOwnerCreateInvite(d);
+    }
+    // Token-gated, not admin-gated: this is the client claiming a link.
+    if (isJsonBoolTrue_(d.claimInvite)) {
+      return handleClaimInvite(d);
     }
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
@@ -2790,6 +2822,244 @@ function handleOwnerCreateBlock(d) {
   SpreadsheetApp.flush();
   clearBookingEndpointCaches_();
   return jsonResponse_({ status: 'success', eventId: ev.getId() });
+}
+
+function buildInviteUrl_(eventId, token) {
+  const qs = 'eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(token);
+  return INVITE_PAGE_BASE.indexOf('?') >= 0 ? INVITE_PAGE_BASE + '&' + qs : INVITE_PAGE_BASE + '?' + qs;
+}
+
+/**
+ * Create a curated booking link (admin app).
+ *
+ * Roni picks the date/time/service herself, and this returns a one-off URL she
+ * sends the client; they only fill in their own details to claim it. Lets her
+ * offer a slot that isn't publicly bookable (outside the booking window, or a
+ * waitlist slot that just freed up) without handing over her whole calendar.
+ *
+ * The slot is HELD immediately — a real calendar event plus an INVITED row —
+ * so nothing else can take it while she waits for a reply, and so the hold is
+ * visible on her calendar and cancellable like any other booking. Status
+ * INVITED is deliberately absent from every other flow's status list (sync,
+ * reminders, public availability by status), so a hold can't be emailed about
+ * or reminded on. No email is sent here; she shares the link herself.
+ */
+function handleOwnerCreateInvite(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const service = String(d.service || '').trim();
+  if (!service) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const dateStr = d.date ? String(d.date).split('T')[0].trim() : '';
+  const timeStr = String(d.time || '').trim();
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) || !timeStr) {
+    return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  }
+  const start = parseYmdAndTimeLocal_(dateStr, convertTo24Hour(timeStr));
+  if (isNaN(start.getTime())) return jsonResponse_({ status: 'error', message: 'bad_datetime' });
+  const durMin = clampDurationMinutes_(d.durationMinutes);
+  const end = new Date(start.getTime() + durMin * 60000);
+  // A label purely for her own calendar/list while the invite is outstanding.
+  const label = String(d.label || '').trim();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let url, token, eventId;
+  try {
+    if (slotOverlapsExistingCalendarEvents_(start, end, [])) {
+      return jsonResponse_({ status: 'error', message: 'slot_unavailable' });
+    }
+    token = generateActionToken();
+    const ss = getCRMSpreadsheet();
+    const s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    const row = s.getLastRow() + 1;
+    s.appendRow([new Date(), label || 'Booking link', '', service, start, timeStr, '', 'INVITED', '', token, '', '', '', '', '']);
+
+    const c = CalendarApp.getCalendarById(CALENDAR_ID);
+    const desc =
+      'Held for a curated booking link sent from the admin app.' +
+      '\nService: ' + service +
+      (label ? '\nFor: ' + label : '') +
+      '\nAwaiting the client to fill in their details.' +
+      '\nDurationMinutes: ' + durMin;
+    markInternalCalendarMutation_();
+    const ev = c.createEvent('HOLD: ' + (label || 'booking link'), start, end, { description: desc });
+    try {
+      ev.setColor(PENDING_COLOR);
+    } catch (colErr) {
+      Logger.log('handleOwnerCreateInvite: setColor skipped: ' + colErr);
+    }
+    eventId = ev.getId();
+    s.getRange(row, 9).setValue(eventId);
+    SpreadsheetApp.flush();
+    clearBookingEndpointCaches_();
+    url = buildInviteUrl_(eventId, token);
+  } finally {
+    lock.releaseLock();
+  }
+  const tz = Session.getScriptTimeZone();
+  return jsonResponse_({
+    status: 'success',
+    url: url,
+    eventId: eventId,
+    token: token,
+    dateLabel: Utilities.formatDate(start, tz, 'EEEE, MMMM d, yyyy'),
+    timeLabel: Utilities.formatDate(start, tz, 'h:mm a'),
+  });
+}
+
+/**
+ * Public read of one invite, for the invite.html landing page. Token-gated and
+ * deliberately thin: it exposes only what the page must render (when, what,
+ * how long) and never the client details of a claimed booking.
+ */
+function handleInviteDetailsGet_(e) {
+  const eventId = String(e.parameter.eventId || '').trim();
+  const token = String(e.parameter.token || '').trim();
+  const callback = e.parameter.callback;
+  function out(obj) {
+    const json = JSON.stringify(obj);
+    return ContentService.createTextOutput(callback ? callback + '(' + json + ')' : json).setMimeType(
+      callback ? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON
+    );
+  }
+  if (!eventId || !token) return out({ ok: false, error: 'bad_link' });
+
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][8]).trim() !== eventId) continue;
+    if (!tokenMatches(data[i][9], token)) return out({ ok: false, error: 'bad_link' });
+    const status = normalizeSheetStatus_(data[i][7]);
+    if (status === 'CANCELLED' || status === 'REJECTED') return out({ ok: false, error: 'cancelled' });
+    if (status !== 'INVITED') return out({ ok: false, error: 'already_claimed' });
+    const startMs = appointmentRowStartMs_(data[i][4], data[i][5]);
+    if (!isNaN(startMs) && startMs < Date.now()) return out({ ok: false, error: 'expired' });
+    const tz = Session.getScriptTimeZone();
+    var durMin = 0;
+    try {
+      const ev = getEventByIdAnyCalendar_(eventId);
+      if (ev) durMin = effectiveDurationMinutesFromEvent_(ev);
+    } catch (err) {
+      durMin = 0;
+    }
+    return out({
+      ok: true,
+      service: String(data[i][3] || '').trim(),
+      dateLabel: formatSheetDateForEmail(data[i][4]),
+      timeLabel: formatSheetTimeForEmail(data[i][5]),
+      durationMinutes: durMin,
+      studioAddress: STUDIO_ADDRESS,
+    });
+  }
+  return out({ ok: false, error: 'bad_link' });
+}
+
+/**
+ * Client claims a curated booking link: they supply their own details, the held
+ * INVITED row becomes a real CONFIRMED booking, and they get the same
+ * confirmation email a website booking sends. Token-gated — no admin secret,
+ * since this is the client acting on a link.
+ */
+function handleClaimInvite(d) {
+  const eventId = String(d.eventId || '').trim();
+  const token = String(d.token || '').trim();
+  if (!eventId || !token) return jsonResponse_({ status: 'error', message: 'bad_link' });
+  const clientName = String(d.clientName || '').trim();
+  const email = String(d.email || '').trim();
+  const phone = String(d.phone || '').trim();
+  const clientNotes = String(d.clientNotes || '').trim();
+  if (!clientName || !email) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let service = '';
+  let neatD = '';
+  let neatTime = '';
+  try {
+    const ss = getCRMSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][8]).trim() !== eventId) continue;
+      rowIndex = i + 1;
+      break;
+    }
+    if (rowIndex < 0) return jsonResponse_({ status: 'error', message: 'bad_link' });
+    if (!tokenMatches(data[rowIndex - 1][9], token)) return jsonResponse_({ status: 'error', message: 'bad_link' });
+    // Re-read status inside the lock so two people opening the same link can't
+    // both claim it.
+    const status = normalizeSheetStatus_(sheet.getRange(rowIndex, 8).getValue());
+    if (status === 'CANCELLED' || status === 'REJECTED') return jsonResponse_({ status: 'error', message: 'cancelled' });
+    if (status !== 'INVITED') return jsonResponse_({ status: 'error', message: 'already_claimed' });
+
+    service = String(data[rowIndex - 1][3] || '').trim();
+    sheet.getRange(rowIndex, 2).setValue(clientName);
+    sheet.getRange(rowIndex, 3).setValue(phone);
+    sheet.getRange(rowIndex, 7).setValue(email);
+    sheet.getRange(rowIndex, 8).setValue('CONFIRMED');
+    if (clientNotes) sheet.getRange(rowIndex, 15).setValue(clientNotes);
+    SpreadsheetApp.flush();
+
+    const tz = Session.getScriptTimeZone();
+    try {
+      const ev = getEventByIdAnyCalendar_(eventId);
+      if (ev) {
+        markInternalCalendarMutation_();
+        ev.setTitle(bookingCalendarTitleFor_('CONFIRMED', clientName));
+        const st = ev.getStartTime();
+        neatD = Utilities.formatDate(st, tz, 'EEEE, MMMM d, yyyy');
+        neatTime = Utilities.formatDate(st, tz, 'h:mm a');
+        applyBookingLocationToEvent_(ev, neatTime, service);
+        ev.setDescription(
+          'Client: ' + clientName +
+          '\nPhone: ' + phone +
+          '\nEmail: ' + email +
+          '\nService: ' + service +
+          (clientNotes ? '\nClient notes: ' + clientNotes : '') +
+          '\n\nBooked via a curated booking link.'
+        );
+      }
+    } catch (calErr) {
+      Logger.log('handleClaimInvite: calendar update skipped: ' + calErr);
+    }
+    if (!neatD) neatD = formatSheetDateForEmail(data[rowIndex - 1][4]);
+    if (!neatTime) neatTime = formatSheetTimeForEmail(data[rowIndex - 1][5]);
+    clearBookingEndpointCaches_();
+  } finally {
+    lock.releaseLock();
+  }
+
+  MailApp.sendEmail({
+    to: email,
+    name: "Roni's Nail Studio",
+    subject: "Appointment Confirmed: Roni's Nail Studio",
+    htmlBody: getConfirmedEmailHtml(clientName, neatD, neatTime, service),
+  });
+  const ownerRows =
+    emailDetailRow('Client', clientName) +
+    emailDetailRow('When', neatD + ' · ' + neatTime) +
+    emailDetailRow('Service', service) +
+    emailDetailRow('Email', email) +
+    emailDetailRow('Phone', phone || '—');
+  MailApp.sendEmail({
+    to: MY_EMAIL,
+    subject: 'Booking link claimed: ' + clientName,
+    htmlBody:
+      '<p style="font-family:sans-serif;">A booking link you sent was just claimed and is now confirmed.</p>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:12px;background:#fafafa;border-radius:8px;"><tbody>' +
+      ownerRows +
+      '</tbody></table>' +
+      (clientNotes ? '<p style="font-family:sans-serif;"><strong>Their note:</strong> ' + escapeHtml(clientNotes) + '</p>' : ''),
+  });
+  return jsonResponse_({ status: 'success', dateLabel: neatD, timeLabel: neatTime, service: service });
 }
 
 /** The ClientNotes tab, created on first use so no manual sheet setup is needed. */
