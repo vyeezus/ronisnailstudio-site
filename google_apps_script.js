@@ -2622,6 +2622,12 @@ function getBookingSheetsForLookup_() {
  * cancelled/rejected/declined or still-upcoming booking.
  */
 function handlePublicClientLookup_(d) {
+  // A blocked client is never "recognized": greeting them warmly and then
+  // refusing the booking a moment later would be worse than not greeting them
+  // at all. Same reply shape as an unknown visitor, so it gives nothing away.
+  if (isClientBlocked_(d.phone, d.email)) {
+    return jsonResponse_({ status: 'success', recognized: false });
+  }
   const inputKeys = ownerLookupDedupeKeys_(d.email, d.phone);
   if (inputKeys.length === 0) {
     return jsonResponse_({ status: 'success', recognized: false });
