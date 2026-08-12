@@ -2249,6 +2249,15 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.ownerSetClientNote)) {
       return handleOwnerSetClientNote(d);
     }
+    if (isJsonBoolTrue_(d.ownerAddClientNote)) {
+      return handleOwnerAddClientNote(d);
+    }
+    if (isJsonBoolTrue_(d.ownerDeleteClientNote)) {
+      return handleOwnerDeleteClientNote(d);
+    }
+    if (isJsonBoolTrue_(d.ownerRekeyClientNotes)) {
+      return handleOwnerRekeyClientNotes(d);
+    }
     if (isJsonBoolTrue_(d.ownerMergeClients)) {
       return handleOwnerMergeClients(d);
     }
@@ -3423,6 +3432,13 @@ function getClientNotesSheet_() {
  * locally from booking history, so it only needs the notes to join onto that —
  * one fetch beats a request per client.
  */
+/**
+ * Every client note, newest first. One ROW PER NOTE — the tab is an append-only
+ * log so each entry keeps the timestamp it was written at, rather than one
+ * blob per client that silently loses its history on edit. Rows written under
+ * the old one-note-per-client scheme are already valid entries, so they simply
+ * become the first note in that client's log.
+ */
 function handleOwnerListClientNotes(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
   if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
@@ -3435,9 +3451,115 @@ function handleOwnerListClientNotes(d) {
     const key = String(data[i][0] == null ? '' : data[i][0]).trim();
     const note = String(data[i][1] == null ? '' : data[i][1]);
     if (!key || !note.trim()) continue;
-    out.push({ clientKey: key, note: note, clientName: String(data[i][2] || '').trim() });
+    const at = data[i][3];
+    out.push({
+      clientKey: key,
+      note: note,
+      clientName: String(data[i][2] || '').trim(),
+      // Doubles as the entry's identity for deletes — see handleOwnerDeleteClientNote.
+      createdAtMs: at instanceof Date && !isNaN(at.getTime()) ? at.getTime() : null,
+    });
   }
+  out.sort(function (a, b) { return (b.createdAtMs || 0) - (a.createdAtMs || 0); });
   return jsonResponse_({ status: 'success', notes: out });
+}
+
+/** Append one timestamped note to a client's log. */
+function handleOwnerAddClientNote(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const key = String(d.clientKey || '').trim();
+  const note = String(d.note == null ? '' : d.note).trim();
+  if (!key || !note) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let createdAt;
+  try {
+    createdAt = new Date();
+    getClientNotesSheet_().appendRow([key, note, String(d.clientName || '').trim(), createdAt]);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success', createdAtMs: createdAt.getTime() });
+}
+
+/**
+ * Delete one note. Identified by clientKey + its timestamp rather than a row
+ * number: row indices shift as other notes are deleted, so a stale one would
+ * quietly delete the wrong entry.
+ */
+function handleOwnerDeleteClientNote(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const key = String(d.clientKey || '').trim();
+  const at = Math.floor(Number(d.createdAtMs));
+  if (!key || !isFinite(at)) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getClientNotesSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0] || '').trim() !== key) continue;
+      const rowAt = data[i][3];
+      if (!(rowAt instanceof Date) || isNaN(rowAt.getTime())) continue;
+      if (Math.abs(rowAt.getTime() - at) > 1000) continue; // same second = same note
+      sh.deleteRow(i + 1);
+      break;
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
+/**
+ * Move every note from one derived client key to another — used when editing a
+ * client's phone changes their key, and when merging duplicates.
+ */
+function handleOwnerRekeyClientNotes(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const fromKeys = (Array.isArray(d.fromKeys) ? d.fromKeys : [d.fromKey])
+    .map(function (k) { return String(k || '').trim(); })
+    .filter(Boolean);
+  const toKey = String(d.toKey || '').trim();
+  if (!fromKeys.length || !toKey) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  let moved = 0;
+  try {
+    const sh = getClientNotesSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      const k = String(data[i][0] || '').trim();
+      if (!k || k === toKey || fromKeys.indexOf(k) < 0) continue;
+      sh.getRange(i + 1, 1).setValue(toKey);
+      if (d.clientName) sh.getRange(i + 1, 3).setValue(String(d.clientName).trim());
+      moved++;
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success', moved: moved });
 }
 
 /**
