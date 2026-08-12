@@ -626,10 +626,18 @@ function getWorkHoursPayload_() {
       const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + step, 12, 0, 0);
       if (day.getDay() !== dow) continue;
       const ymd = Utilities.formatDate(day, tz, 'yyyy-MM-dd');
-      if (dateOverrides[ymd]) continue; // hand-set override wins
-      if (!biweeklyDateIsOpen_(entry.biweeklyAnchor, ymd)) {
-        dateOverrides[ymd] = { open: false };
-      }
+      if (biweeklyDateIsOpen_(entry.biweeklyAnchor, ymd)) continue;
+      const existing = dateOverrides[ymd];
+      // Special hours she deliberately set on a closed week still win.
+      if (existing && existing.open !== false) continue;
+      // `auto` marks a closure the alternating rule already implies, so the app
+      // can keep it out of her "closed dates" list — those are a given, and
+      // listing 26 of them buries the handful she actually chose. Crucially it
+      // also stops the app saving them back as hand-set rows, which would bake
+      // the pattern in and leave stale closures behind if she ever shifts it.
+      // Applied to matching rows already in the sheet too, so any that were
+      // baked in before this existed get cleaned up on the next save.
+      dateOverrides[ymd] = { open: false, auto: true };
     }
   }
   return { weekly: weekly, dateOverrides: dateOverrides };
