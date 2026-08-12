@@ -552,8 +552,16 @@ function getWorkHoursFromSheet_() {
         continue;
       }
       if (st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
-      if (key.kind === 'dow') weekly[String(key.dow)] = { start: st, end: en };
-      else if (key.kind === 'date') dateOverrides[key.ymd] = { open: true, start: st, end: en };
+      if (key.kind === 'dow') {
+        const entry = { start: st, end: en };
+        // Column D: anchor for a weekday that only runs every other week.
+        const anchor = waitlistCellToYmd_(data[i][3]);
+        if (anchor) {
+          entry.everyOther = true;
+          entry.biweeklyAnchor = anchor;
+        }
+        weekly[String(key.dow)] = entry;
+      } else if (key.kind === 'date') dateOverrides[key.ymd] = { open: true, start: st, end: en };
     }
     if (!Object.keys(weekly).length && !Object.keys(dateOverrides).length) return null;
     return { weekly: weekly, dateOverrides: dateOverrides };
@@ -562,12 +570,63 @@ function getWorkHoursFromSheet_() {
   }
 }
 
+/** How far ahead a biweekly rule is expanded into concrete closed dates. The
+ *  public booking window is ~1 month, so a year is ample headroom. */
+const BIWEEKLY_EXPAND_DAYS = 365;
+
+/** Whole days between two yyyy-MM-dd, via local noon so DST can't shift it. */
+function daysBetweenYmd_(aYmd, bYmd) {
+  const a = parseYmdAndTimeLocal_(aYmd, '12:00:00');
+  const b = parseYmdAndTimeLocal_(bYmd, '12:00:00');
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return NaN;
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+/** Is `ymd` on an OPEN week for a biweekly day anchored at `anchorYmd`? */
+function biweeklyDateIsOpen_(anchorYmd, ymd) {
+  const days = daysBetweenYmd_(anchorYmd, ymd);
+  if (isNaN(days)) return true; // unreadable anchor: fail open rather than shut her week
+  const weeks = Math.round(days / 7);
+  return (((weeks % 2) + 2) % 2) === 0;
+}
+
+/**
+ * Studio hours as the app and website consume them.
+ *
+ * Biweekly weekdays are stored as a single rule (a day + an anchor week) but
+ * EXPANDED here into ordinary `{open:false}` date overrides for the closed
+ * weeks. That's deliberate: every consumer — the website calendar,
+ * isBookingWithinStudioHours_, the app grid — already honours date overrides,
+ * so an alternating schedule needs no changes anywhere downstream. Expanding on
+ * every read (rather than storing the dates) means it never silently expires.
+ *
+ * Explicit overrides she set by hand always win over generated ones.
+ */
 function getWorkHoursPayload_() {
   const fromSheet = getWorkHoursFromSheet_();
-  if (fromSheet) {
-    return { weekly: fromSheet.weekly, dateOverrides: fromSheet.dateOverrides || {} };
+  const weekly = fromSheet ? fromSheet.weekly : defaultWorkHoursObject_();
+  const dateOverrides = fromSheet && fromSheet.dateOverrides ? fromSheet.dateOverrides : {};
+
+  const tz = Session.getScriptTimeZone();
+  const todayYmd = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  for (const dowKey of Object.keys(weekly)) {
+    const entry = weekly[dowKey];
+    if (!entry || !entry.everyOther || !entry.biweeklyAnchor) continue;
+    const dow = parseInt(dowKey, 10);
+    if (isNaN(dow)) continue;
+    // Walk from today to the horizon, stamping the closed weeks of this weekday.
+    const cursor = parseYmdAndTimeLocal_(todayYmd, '12:00:00');
+    for (var step = 0; step <= BIWEEKLY_EXPAND_DAYS; step++) {
+      const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + step, 12, 0, 0);
+      if (day.getDay() !== dow) continue;
+      const ymd = Utilities.formatDate(day, tz, 'yyyy-MM-dd');
+      if (dateOverrides[ymd]) continue; // hand-set override wins
+      if (!biweeklyDateIsOpen_(entry.biweeklyAnchor, ymd)) {
+        dateOverrides[ymd] = { open: false };
+      }
+    }
   }
-  return { weekly: defaultWorkHoursObject_(), dateOverrides: {} };
+  return { weekly: weekly, dateOverrides: dateOverrides };
 }
 /**
  * Merge guide
@@ -1457,13 +1516,16 @@ function handleAdminSetWorkHours(d) {
   let sh = ss.getSheetByName(HOURS_SHEET_NAME);
   if (!sh) sh = ss.insertSheet(HOURS_SHEET_NAME);
   sh.clear();
-  sh.appendRow(['day', 'start', 'end']);
-  // Column A mixes day-of-week numbers (0-6) with yyyy-MM-dd override keys.
-  // Pin it to plain text so Sheets can't auto-convert either kind into a date
+  // Column D carries an anchor date for weekdays that run every OTHER week
+  // (blank otherwise): open on the anchor's week, closed the next, repeat.
+  sh.appendRow(['day', 'start', 'end', 'biweeklyAnchor']);
+  // Columns A and D mix day-of-week numbers (0-6) with yyyy-MM-dd keys. Pin
+  // both to plain text so Sheets can't auto-convert either kind into a date
   // serial: a bare 6 landing in a date-formatted cell was being stored as
   // 1900-01-05, which quietly turned "open Saturdays" into a junk 1900 override
   // and dropped Saturday from the weekly schedule entirely.
   sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
+  sh.getRange(1, 4, sh.getMaxRows(), 1).setNumberFormat('@');
 
   const rows = [];
   let anyOpen = false;
@@ -1473,8 +1535,11 @@ function handleAdminSetWorkHours(d) {
     const st = Math.floor(Number(h.start));
     const en = Math.floor(Number(h.end));
     if (!isFinite(st) || !isFinite(en) || st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
+    const anchor = /^\d{4}-\d{2}-\d{2}$/.test(String(h.biweeklyAnchor || '').trim())
+      ? String(h.biweeklyAnchor).trim()
+      : '';
     // String, to match the plain-text column and stay un-coercible to a date.
-    rows.push([String(day), st, en]);
+    rows.push([String(day), st, en, anchor]);
     anyOpen = true;
   }
 
@@ -1485,14 +1550,14 @@ function handleAdminSetWorkHours(d) {
     const oh = overrideObj[ymd];
     if (!oh) continue;
     if (oh.open === false) {
-      rows.push([ymd, 0, 0]);
+      rows.push([ymd, 0, 0, '']);
       anyOpen = true;
       continue;
     }
     const ost = Math.floor(Number(oh.start));
     const oen = Math.floor(Number(oh.end));
     if (!isFinite(ost) || !isFinite(oen) || ost < 0 || ost > 23 || oen < 1 || oen > 24 || ost >= oen) continue;
-    rows.push([ymd, ost, oen]);
+    rows.push([ymd, ost, oen, '']);
     anyOpen = true;
   }
 
@@ -1500,7 +1565,7 @@ function handleAdminSetWorkHours(d) {
     return jsonResponse_({ status: 'error', message: 'nothing_open' });
   }
   if (rows.length > 0) {
-    sh.getRange(2, 1, rows.length, 3).setValues(rows);
+    sh.getRange(2, 1, rows.length, 4).setValues(rows);
   }
   SpreadsheetApp.flush();
   clearBookingEndpointCaches_();
