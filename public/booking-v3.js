@@ -775,7 +775,9 @@ function bootBookingPage() {
                           ? 'Someone just took that time. Refresh the page and pick another open slot.'
                           : apiMsg === 'server_busy'
                             ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
-                            : 'Submission failed. Please try again.';
+                            : apiMsg === 'blocked'
+                              ? 'We’re not able to take this booking online. Please reach out to Roni directly at ronisnailstudio@gmail.com and she’ll help from there.'
+                              : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');

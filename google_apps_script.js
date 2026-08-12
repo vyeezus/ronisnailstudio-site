@@ -31,6 +31,12 @@ const CLIENT_NOTES_SHEET_NAME = 'ClientNotes';
  * inside a lock, so the race resolves to exactly one winner).
  */
 const WAITLIST_SHEET_NAME = 'Waitlist';
+/**
+ * Clients barred from booking themselves. Matched on phone digits OR email —
+ * either alone is enough, since someone turned away often comes back with one
+ * of the two changed.
+ */
+const BLOCKED_SHEET_NAME = 'BlockedClients';
 const PENDING_COLOR = '5';
 /**
  * Calendar that owner time blocks are created on — deliberately NOT CALENDAR_ID.
@@ -1088,6 +1094,11 @@ function handleOwnerAcceptBooking(d) {
 }
 
 function handlePublicBookingPost_(d) {
+  // Checked first so a blocked client gets the same reply whatever else is
+  // wrong with the request, and never learns anything about the calendar.
+  if (isClientBlocked_(d.phone, d.email)) {
+    return jsonResponse_({ status: 'error', message: 'blocked' });
+  }
   const pubDateStr = d.date ? String(d.date).split('T')[0].trim() : '';
   if (!pubDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(pubDateStr)) {
     return jsonResponse_({ status: 'error', message: 'bad_date' });
@@ -2281,6 +2292,15 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.ownerNotifyWaitlist)) {
       return handleOwnerNotifyWaitlist(d);
     }
+    if (isJsonBoolTrue_(d.ownerListBlocked)) {
+      return handleOwnerListBlocked(d);
+    }
+    if (isJsonBoolTrue_(d.ownerBlockClient)) {
+      return handleOwnerBlockClient(d);
+    }
+    if (isJsonBoolTrue_(d.ownerUnblockClient)) {
+      return handleOwnerUnblockClient(d);
+    }
     if (isJsonBoolTrue_(d.adminSetWorkHours)) {
       return handleAdminSetWorkHours(d);
     }
@@ -2918,6 +2938,155 @@ function handleOwnerCreateBlock(d) {
   return jsonResponse_({ status: 'success', eventId: ev.getId() });
 }
 
+/** The BlockedClients tab, created on first use so no manual sheet setup is needed. */
+function getBlockedSheet_() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(BLOCKED_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(BLOCKED_SHEET_NAME);
+    sh.appendRow(['phone', 'email', 'name', 'reason', 'blockedAt']);
+    sh.setFrozenRows(1);
+    // Phone is digits-only text; left as a number Sheets would strip leading
+    // zeros and mangle long numbers into scientific notation.
+    sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
+  }
+  return sh;
+}
+
+/** Digits only, so "(339) 237-8537" and "3392378537" are the same number. */
+function normalizePhoneDigits_(raw) {
+  return String(raw == null ? '' : raw).replace(/\D/g, '');
+}
+
+/**
+ * Is this person barred from booking? Either a matching phone or a matching
+ * email is enough. Fails OPEN on any error — a spreadsheet hiccup must never
+ * turn into "nobody can book".
+ */
+function isClientBlocked_(phone, email) {
+  try {
+    const wantPhone = normalizePhoneDigits_(phone);
+    const wantEmail = String(email == null ? '' : email).trim().toLowerCase();
+    if (!wantPhone && !wantEmail) return false;
+    const data = getBlockedSheet_().getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      const p = normalizePhoneDigits_(data[i][0]);
+      const e = String(data[i][1] == null ? '' : data[i][1]).trim().toLowerCase();
+      if (wantPhone && p && p === wantPhone) return true;
+      if (wantEmail && e && e === wantEmail) return true;
+    }
+  } catch (err) {
+    Logger.log('isClientBlocked_ error (allowing booking): ' + err);
+  }
+  return false;
+}
+
+function handleOwnerListBlocked(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const data = getBlockedSheet_().getDataRange().getValues();
+  const out = [];
+  for (var i = 1; i < data.length; i++) {
+    const phone = normalizePhoneDigits_(data[i][0]);
+    const email = String(data[i][1] == null ? '' : data[i][1]).trim();
+    if (!phone && !email) continue;
+    const at = data[i][4];
+    out.push({
+      phone: phone,
+      email: email,
+      name: String(data[i][2] || '').trim(),
+      reason: String(data[i][3] || '').trim(),
+      blockedAtMs: at instanceof Date && !isNaN(at.getTime()) ? at.getTime() : null,
+    });
+  }
+  out.sort(function (a, b) { return (b.blockedAtMs || 0) - (a.blockedAtMs || 0); });
+  return jsonResponse_({ status: 'success', blocked: out });
+}
+
+/**
+ * Block someone from booking themselves. Also drops them off the cancellation
+ * list — otherwise the next opening would email an invite to someone who then
+ * can't use it.
+ */
+function handleOwnerBlockClient(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const phone = normalizePhoneDigits_(d.phone);
+  const email = String(d.email || '').trim();
+  if (!phone && !email) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getBlockedSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      const p = normalizePhoneDigits_(data[i][0]);
+      const e = String(data[i][1] == null ? '' : data[i][1]).trim().toLowerCase();
+      if ((phone && p === phone) || (email && e === email.toLowerCase())) {
+        return jsonResponse_({ status: 'success', already: true });
+      }
+    }
+    sh.appendRow([phone, email, String(d.clientName || '').trim(), String(d.reason || '').trim(), new Date()]);
+    SpreadsheetApp.flush();
+
+    // Take them off the cancellation list too.
+    try {
+      const wl = getWaitlistSheet_();
+      const wdata = wl.getDataRange().getValues();
+      for (var w = wdata.length - 1; w >= 1; w--) {
+        const we = String(wdata[w][2] || '').trim().toLowerCase();
+        const wp = normalizePhoneDigits_(wdata[w][3]);
+        if ((email && we === email.toLowerCase()) || (phone && wp && wp === phone)) wl.deleteRow(w + 1);
+      }
+      SpreadsheetApp.flush();
+    } catch (wlErr) {
+      Logger.log('handleOwnerBlockClient: waitlist cleanup skipped: ' + wlErr);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
+function handleOwnerUnblockClient(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const phone = normalizePhoneDigits_(d.phone);
+  const email = String(d.email || '').trim().toLowerCase();
+  if (!phone && !email) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getBlockedSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      const p = normalizePhoneDigits_(data[i][0]);
+      const e = String(data[i][1] == null ? '' : data[i][1]).trim().toLowerCase();
+      // Both must match when both were recorded, so unblocking one person can't
+      // silently clear someone else who shares a phone (family members do).
+      const phoneHit = phone && p === phone;
+      const emailHit = email && e === email;
+      if (phoneHit || emailHit) sh.deleteRow(i + 1);
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
+}
+
 /** The Waitlist tab, created on first use so no manual sheet setup is needed. */
 function getWaitlistSheet_() {
   const ss = getCRMSpreadsheet();
@@ -2982,6 +3151,11 @@ function handlePublicJoinWaitlist_(d) {
   const email = String(d.email || '').trim();
   if (!name || !email || email.indexOf('@') < 0) {
     return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  }
+  // Blocked clients can't slip in the side door — a waitlist blast would
+  // otherwise hand them a booking link.
+  if (isClientBlocked_(d.phone, email)) {
+    return jsonResponse_({ status: 'error', message: 'blocked' });
   }
   const ymdOk = function (s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); };
   const fromDate = ymdOk(String(d.fromDate || '').trim()) ? String(d.fromDate).trim() : '';

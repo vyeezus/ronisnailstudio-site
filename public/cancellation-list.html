@@ -132,7 +132,9 @@
                 if (!res || res.status !== 'success') {
                     btn.disabled = false;
                     btn.textContent = 'Add me to the list';
-                    err.textContent = 'Something went wrong. Please try again, or message Roni directly.';
+                    err.textContent = res && res.message === 'blocked'
+                        ? 'We’re not able to add you to the list online. Please reach out to Roni directly at ronisnailstudio@gmail.com.'
+                        : 'Something went wrong. Please try again, or message Roni directly.';
                     err.classList.remove('wl-hide');
                     return;
                 }
