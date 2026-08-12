@@ -776,7 +776,7 @@ function bootBookingPage() {
                           : apiMsg === 'server_busy'
                             ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
                             : apiMsg === 'blocked'
-                              ? 'Online booking isn’t available for these details. We’re not able to take this appointment — thank you for understanding.'
+                              ? 'Booking isn’t available for these details. We’re not able to take this appointment — thank you for understanding.'
                               : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
