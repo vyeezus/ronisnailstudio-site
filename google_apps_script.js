@@ -2953,9 +2953,19 @@ function getBlockedSheet_() {
   return sh;
 }
 
-/** Digits only, so "(339) 237-8537" and "3392378537" are the same number. */
+/**
+ * Digits only, with the US country code stripped, so every way the same number
+ * gets typed collapses to one value: "(339) 237-8537", "3392378537",
+ * "+1 339-237-8537" and "13392378537" all become "3392378537".
+ *
+ * Only the leading 1 on an 11-digit number is dropped — a bare 10-digit number
+ * starting with 1 isn't a country code, and other countries' numbers are left
+ * alone rather than mangled.
+ */
 function normalizePhoneDigits_(raw) {
-  return String(raw == null ? '' : raw).replace(/\D/g, '');
+  var digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+  if (digits.length === 11 && digits.charAt(0) === '1') digits = digits.slice(1);
+  return digits;
 }
 
 /**
