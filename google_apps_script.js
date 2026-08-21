@@ -70,6 +70,14 @@ const OWNER_MODIFY_PAGE_BASE = 'https://ronisnailstudio.com/owner-modify-request
 const OWNER_REJECT_PAGE_BASE = 'https://ronisnailstudio.com/reject-booking.html';
 const STUDIO_ADDRESS = '150 Wood Rd, Braintree, MA, Suite 304-E';
 const SHEET_COL_OWNER_DECLINE_REASON = 16;
+/**
+ * Roni's own note about ONE appointment ("chrome", "bring inspo pics") — set
+ * when she books it and editable after. Distinct from column 15, which is what
+ * the CLIENT typed when requesting, and from the per-client note log in the
+ * ClientNotes tab. Columns 12-14 are the alternate-time flow, so 17 is the
+ * first free one.
+ */
+const SHEET_COL_APPT_NOTE = 17;
 const ARCHIVE_AFTER_PAST_DAYS = 1;
 
 function clientConfirmedCalendarEventTitle_(clientName) {
@@ -2873,7 +2881,9 @@ function handleOwnerDirectBooking(d) {
   const ss = getCRMSpreadsheet();
   const s = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const row = s.getLastRow() + 1;
+  const apptNote = String(d.apptNote || '').trim();
   s.appendRow([new Date(), clientName, phone, service, start, timeStr, email, 'CONFIRMED', '', actionToken, '', '', '', '', '']);
+  if (apptNote) s.getRange(row, SHEET_COL_APPT_NOTE).setValue(apptNote);
   const c = CalendarApp.getCalendarById(CALENDAR_ID);
   const desc =
     'Client: ' + clientName +
@@ -2881,6 +2891,7 @@ function handleOwnerDirectBooking(d) {
     '\nEmail: ' + email +
     '\nService: ' + service +
     '\nDuration: ' + durMin + ' minutes' +
+    (apptNote ? '\nNote: ' + apptNote : '') +
     '\n\nBooked via Roni\'s Nail Studio website (admin booking page).' +
     '\n(Google Calendar may list the Google account that runs this script as the creator; that is normal for studio automation.)' +
     '\nDurationMinutes: ' + durMin;
@@ -4249,7 +4260,7 @@ function handleOwnerUpdateBooking(d) {
 
   var hasAny =
     d.clientName !== undefined || d.phone !== undefined || d.email !== undefined ||
-    d.service !== undefined || d.durationMinutes !== undefined;
+    d.service !== undefined || d.durationMinutes !== undefined || d.apptNote !== undefined;
   if (!hasAny) return jsonResponse_({ status: 'error', message: 'nothing_to_update' });
 
   var ss = getCRMSpreadsheet();
@@ -4280,6 +4291,7 @@ function handleOwnerUpdateBooking(d) {
       sheet.getRange(rowIndex, 4).setValue(newService);
     }
     if (d.email !== undefined) sheet.getRange(rowIndex, 7).setValue(String(d.email).trim());
+    if (d.apptNote !== undefined) sheet.getRange(rowIndex, SHEET_COL_APPT_NOTE).setValue(String(d.apptNote).trim());
     SpreadsheetApp.flush();
 
     // Best-effort: keep the calendar event in sync with name/service.
@@ -4565,6 +4577,8 @@ function handleOwnerListBookings(d) {
       ownerToken: String(row[9] || '').trim(),
       // Notes the client typed when requesting (column 15 / index 14).
       clientNotes: String(row[14] || '').trim(),
+      // Roni's own note about this appointment (column 17 / index 16).
+      apptNote: String(row[SHEET_COL_APPT_NOTE - 1] || '').trim(),
     });
   }
   out.sort(function (a, b) {
