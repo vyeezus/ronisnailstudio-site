@@ -3497,6 +3497,7 @@ function handleInviteDetailsGet_(e) {
     var durMin = 0;
     var dateLabel = '';
     var timeLabel = '';
+    var weekday = '';
     // The CALENDAR EVENT is the source of truth for when the appointment is —
     // same precedence sendTwoDayReminders and resendConfirmationEmail use. The
     // sheet's time cell is a round-tripped string Sheets may have re-parsed
@@ -3509,12 +3510,17 @@ function handleInviteDetailsGet_(e) {
         const st = ev.getStartTime();
         dateLabel = Utilities.formatDate(st, tz, 'EEEE, MMMM d, yyyy');
         timeLabel = Utilities.formatDate(st, tz, 'h:mm a');
+        weekday = Utilities.formatDate(st, tz, 'EEEE');
       }
     } catch (err) {
       durMin = 0;
     }
     if (!dateLabel) dateLabel = formatSheetDateForEmail(data[i][4]);
     if (!timeLabel) timeLabel = formatSheetTimeForEmail(data[i][5]);
+    // Weekday comes from the calendar event where we have it, and is formatted in
+    // the script timezone either way — never read off the sheet's date text, which
+    // can come back re-typed.
+    if (!weekday && !isNaN(startMs)) weekday = Utilities.formatDate(new Date(startMs), tz, 'EEEE');
     return out({
       ok: true,
       service: String(data[i][3] || '').trim(),
@@ -3522,6 +3528,7 @@ function handleInviteDetailsGet_(e) {
       timeLabel: timeLabel,
       durationMinutes: durMin,
       studioAddress: STUDIO_ADDRESS,
+      isSaturday: weekday === 'Saturday',
     });
   }
   return out({ ok: false, error: 'bad_link' });
@@ -3533,6 +3540,24 @@ function handleInviteDetailsGet_(e) {
  * confirmation email a website booking sends. Token-gated — no admin secret,
  * since this is the client acting on a link.
  */
+/**
+ * Saturday check for a held invite row. The calendar event is the source of
+ * truth for when an appointment is — a sheet date cell can come back re-typed —
+ * so prefer it and only fall back to the row's own date/time.
+ */
+function inviteRowIsSaturday_(eventId, row) {
+  const tz = Session.getScriptTimeZone();
+  try {
+    const ev = getEventByIdAnyCalendar_(eventId);
+    if (ev) return Utilities.formatDate(ev.getStartTime(), tz, 'EEEE') === 'Saturday';
+  } catch (err) {
+    Logger.log('inviteRowIsSaturday_: calendar lookup failed, using the sheet row: ' + err);
+  }
+  const ms = appointmentRowStartMs_(row[4], row[5]);
+  if (isNaN(ms)) return false;
+  return Utilities.formatDate(new Date(ms), tz, 'EEEE') === 'Saturday';
+}
+
 function handleClaimInvite(d) {
   const eventId = String(d.eventId || '').trim();
   const token = String(d.token || '').trim();
@@ -3568,6 +3593,13 @@ function handleClaimInvite(d) {
     if (status === 'CANCELLED' || status === 'REJECTED') return jsonResponse_({ status: 'error', message: 'cancelled' });
     if (status !== 'INVITED') return jsonResponse_({ status: 'error', message: 'already_claimed' });
 
+    // A Saturday link carries the same $50 deposit rule as a Saturday request from
+    // the booking form. Checked before the row is touched, so a refused claim
+    // leaves the INVITED hold exactly as it was for the next attempt.
+    if (inviteRowIsSaturday_(eventId, data[rowIndex - 1]) && d.saturdayDepositAck !== true) {
+      return jsonResponse_({ status: 'error', message: 'saturday_deposit_ack_required' });
+    }
+
     service = String(data[rowIndex - 1][3] || '').trim();
     sheet.getRange(rowIndex, 2).setValue(clientName);
     sheet.getRange(rowIndex, 3).setValue(phone);
@@ -3592,6 +3624,9 @@ function handleClaimInvite(d) {
           '\nEmail: ' + email +
           '\nService: ' + service +
           (clientNotes ? '\nClient notes: ' + clientNotes : '') +
+          (Utilities.formatDate(st, tz, 'EEEE') === 'Saturday'
+            ? '\nSaturday: $50 deposit required (acknowledged at booking)'
+            : '') +
           '\n\nBooked via a curated booking link.'
         );
       }

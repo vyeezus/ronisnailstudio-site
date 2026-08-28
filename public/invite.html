@@ -39,6 +39,17 @@
         .inv-msg.err { background: rgba(183,94,122,.10); border: 1px solid rgba(183,94,122,.25); color: #8b3a52; }
         .inv-msg.ok  { background: rgba(100,140,100,.12); border: 1px solid rgba(100,140,100,.25); color: #2d5a2d; }
         .inv-hide { display: none; }
+        .inv-dep { border: 1px solid rgba(178,115,154,.35); background: rgba(178,115,154,.07);
+                   border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: 1.25rem; }
+        .inv-dep-title { font-family: var(--font-heading); font-size: .68rem; letter-spacing: 1.4px;
+                         text-transform: uppercase; font-weight: 600; color: var(--text-accent);
+                         margin: 0 0 .55rem; }
+        .inv-dep-body { font-size: .88rem; line-height: 1.6; color: var(--text-main); margin: 0 0 .85rem; }
+        .inv-dep-agree { display: flex; align-items: flex-start; gap: .6rem;
+                         font-size: .88rem; line-height: 1.5; color: var(--text-main); cursor: pointer; }
+        .inv-dep-agree input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px;
+                                                margin-top: .12rem; accent-color: var(--text-accent);
+                                                cursor: pointer; }
     </style>
 </head>
 <body>
@@ -71,8 +82,17 @@
                 <label class="inv-label" for="f-notes">Anything I should know? (optional)</label>
                 <textarea class="inv-field" id="f-notes" placeholder="Inspo, allergies, questions…"></textarea>
 
+                <div class="inv-dep inv-hide" id="f-deposit" role="note">
+                    <p class="inv-dep-title">Saturday Appointment &mdash; $50 Deposit Required</p>
+                    <p class="inv-dep-body">Saturday hours are limited and are held by deposit. A <strong>non-refundable $50 deposit</strong> (Zelle: ronisnailstudio@gmail.com) is required for every Saturday appointment, new and returning clients alike, and goes towards your service total.</p>
+                    <label class="inv-dep-agree">
+                        <input type="checkbox" id="f-deposit-ack">
+                        <span>I understand a $50 deposit is required for my Saturday appointment, and that my appointment isn't held without it.</span>
+                    </label>
+                </div>
+
                 <button class="inv-btn" id="f-submit" type="submit">Confirm my appointment</button>
-                <p class="inv-note">You'll get a confirmation email right away. Please review the
+                <p class="inv-note" id="f-note">You'll get a confirmation email right away. Please review the
                    <a href="index.html#policies">studio policies</a> — a deposit is required for first-time clients.</p>
             </form>
         </div>
@@ -91,6 +111,9 @@
     var token = params.get('token') || '';
 
     var $ = function (id) { return document.getElementById(id); };
+    // Set once the invite loads, so the claim carries the same Saturday deposit
+    // acknowledgement a Saturday request from the booking form does.
+    var isSaturday = false;
     var show = function (el) { el.classList.remove('inv-hide'); };
     var hide = function (el) { el.classList.add('inv-hide'); };
 
@@ -100,7 +123,8 @@
         cancelled: 'This appointment was cancelled. Please ask Roni for a new link.',
         expired: 'This time has already passed. Please ask Roni for a new link.',
         slot_unavailable: 'That time was just taken. Please message Roni to find another.',
-        server_busy: 'The studio’s calendar is busy right now — please try again in a moment.'
+        server_busy: 'The studio’s calendar is busy right now — please try again in a moment.',
+        saturday_deposit_ack_required: 'Saturday appointments require a $50 deposit. Please reload this page and tick the deposit box to confirm.'
     };
     function friendly(code) {
         return MESSAGES[code] || 'Something went wrong. Please message Roni and she’ll sort it out.';
@@ -125,6 +149,16 @@
             $('d-time').textContent = data.timeLabel || '—';
             $('d-service').textContent = data.service || '—';
             $('d-addr').textContent = data.studioAddress || '';
+            if (data.isSaturday) {
+                isSaturday = true;
+                show($('f-deposit'));
+                $('f-submit').disabled = true;
+                $('f-deposit-ack').addEventListener('change', function () {
+                    $('f-submit').disabled = !this.checked;
+                });
+                $('f-note').innerHTML = 'You\'ll get a confirmation email right away. Please review the ' +
+                    '<a href="index.html#policies">studio policies</a>.';
+            }
             hide($('loading'));
             show($('form-area'));
         })
@@ -137,6 +171,7 @@
         var email = $('f-email').value.trim();
         if (!name) { $('f-name').focus(); return; }
         if (!email || email.indexOf('@') < 0) { $('f-email').focus(); return; }
+        if (isSaturday && !$('f-deposit-ack').checked) { $('f-deposit-ack').focus(); return; }
 
         var btn = $('f-submit');
         btn.disabled = true;
@@ -152,7 +187,8 @@
                 clientName: name,
                 email: email,
                 phone: $('f-phone').value.trim(),
-                clientNotes: $('f-notes').value.trim()
+                clientNotes: $('f-notes').value.trim(),
+                saturdayDepositAck: isSaturday
             })
         })
             .then(function (r) { return r.json(); })
