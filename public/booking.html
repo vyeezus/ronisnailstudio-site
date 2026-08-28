@@ -6,7 +6,7 @@
     <link rel="icon" href="favicon.png" type="image/png">
     <link rel="apple-touch-icon" href="favicon.png">
     <link rel="preconnect" href="https://script.google.com" crossorigin>
-    <link rel="preload" href="booking-v3.js?v=name_recognition_v3" as="script">
+    <link rel="preload" href="booking-v3.js?v=sat_deposit_v1" as="script">
     <title>Select Time Slot | Roni's Nail Studio</title>
     <meta name="description" content="Choose your preferred date and time for your custom nail service. Select from available slots.">
     <link rel="stylesheet" href="styles.css?v=montserrat-wordmark-5">
@@ -283,6 +283,49 @@
             max-width: 100%;
             overflow-wrap: anywhere;
         }
+
+        /* Saturday deposit notice — shown only when the chosen date is a Saturday */
+        #saturday-deposit {
+            border: 1px solid rgba(178, 115, 154, 0.35);
+            background: rgba(178, 115, 154, 0.07);
+            border-radius: 10px;
+            padding: 1rem 1.1rem;
+            margin-bottom: 1.25rem;
+        }
+        .sat-dep-title {
+            font-family: var(--font-heading);
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-accent);
+            margin: 0 0 0.6rem;
+        }
+        .sat-dep-body {
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin: 0 0 0.9rem;
+        }
+        .sat-dep-agree {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            font-family: var(--font-body);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+        .sat-dep-agree input[type="checkbox"] {
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            margin-top: 0.15rem;
+            accent-color: var(--text-accent);
+            cursor: pointer;
+        }
+        /* Reschedules keep the reminder but aren't gated — the original deposit transfers */
+        #saturday-deposit.reminder-only .sat-dep-agree { display: none; }
 
         .slots-grid {
             display: flex;
@@ -576,6 +619,14 @@
                         <label>Additional notes or requests <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);">(optional)</span></label>
                         <textarea id="cust-notes" maxlength="2000" rows="4" placeholder="Allergies, shape preferences, timing constraints, etc." autocomplete="off"></textarea>
                     </div>
+                    <div id="saturday-deposit" role="note" style="display:none;">
+                        <p class="sat-dep-title">Saturday Appointment &mdash; $50 Deposit Required</p>
+                        <p class="sat-dep-body">Saturday hours are limited and are held by deposit. A <strong>non-refundable $50 deposit</strong> (Zelle: ronisnailstudio@gmail.com) is required for every Saturday appointment, new and returning clients alike, and goes towards your service total. Your request will not be accepted until the deposit is received.</p>
+                        <label class="sat-dep-agree" id="sat-dep-agree">
+                            <input type="checkbox" id="saturday-deposit-checkbox">
+                            <span>I understand a $50 deposit is required for my Saturday appointment, and that my appointment will not be accepted without it.</span>
+                        </label>
+                    </div>
                     <div id="book-error"></div>
                     <button id="confirm-btn" class="cute-btn" disabled>Submit Request</button>
                 </div>
@@ -593,6 +644,6 @@
             </div>
             <a href="index.html" class="cute-btn" style="display: inline-block; text-decoration: none; padding: 1rem 2.5rem;">Back to Home</a>
         </div>
-    <script src="booking-v3.js?v=name_recognition_v3"></script>
+    <script src="booking-v3.js?v=sat_deposit_v1"></script>
 </body>
 </html>

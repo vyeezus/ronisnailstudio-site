@@ -248,6 +248,8 @@ function bootBookingPage() {
     const nameHint = document.getElementById('name-hint');
     const welcomeBack = document.getElementById('welcome-back');
     const notesInput = document.getElementById('cust-notes');
+    const satDeposit = document.getElementById('saturday-deposit');
+    const satDepositCheckbox = document.getElementById('saturday-deposit-checkbox');
 
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'];
@@ -354,6 +356,28 @@ function bootBookingPage() {
         const p = dateStr.split('-').map(Number);
         if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return new Date(NaN);
         return new Date(p[0], p[1] - 1, p[2], hour, minute, 0);
+    }
+
+    // Saturday hours are limited and held by a $50 deposit, so a Saturday request
+    // isn't accepted until the client has acknowledged that. Reschedules see the
+    // same note as a reminder only — an existing deposit transfers, and gating
+    // them would read as if we were asking for a second one.
+    function isSaturday(dateStr) {
+        const d = localWallDateTime(dateStr, 12, 0);
+        return !isNaN(d.getTime()) && d.getDay() === 6;
+    }
+
+    function needsSaturdayDepositAck() {
+        return !isReschedule && !!selectedDate && isSaturday(selectedDate);
+    }
+
+    /** Called on every date pick, so the ack is re-taken for each chosen Saturday. */
+    function syncSaturdayDeposit() {
+        if (!satDeposit) return;
+        if (satDepositCheckbox) satDepositCheckbox.checked = false;
+        const isSat = !!selectedDate && isSaturday(selectedDate);
+        satDeposit.style.display = isSat ? 'block' : 'none';
+        satDeposit.classList.toggle('reminder-only', isReschedule);
     }
 
     /** Busy intervals on this local day clipped to work hours, sorted and merged. */
@@ -543,6 +567,7 @@ function bootBookingPage() {
 
         selectedDate = dateStr;
         selectedSlot = null;
+        syncSaturdayDeposit();
         customerSection.style.display = 'none';
         confirmBtn.disabled = true;
         document.querySelectorAll('.cal-day.selected').forEach(d => d.classList.remove('selected'));
@@ -651,12 +676,14 @@ function bootBookingPage() {
             ? phoneVal.replace(/\D/g, '').length >= 10
             : phoneRegex.test(phoneVal);
 
-        confirmBtn.disabled = !isNameValid || !isEmailValid || !isPhoneValid || !selectedSlot;
+        const satAckOk = !needsSaturdayDepositAck() || !!(satDepositCheckbox && satDepositCheckbox.checked);
+        confirmBtn.disabled = !isNameValid || !isEmailValid || !isPhoneValid || !selectedSlot || !satAckOk;
     }
 
     nameInput.addEventListener('input', updateConfirmBtn);
     phoneInput.addEventListener('input', updateConfirmBtn);
     emailInput.addEventListener('input', updateConfirmBtn);
+    if (satDepositCheckbox) satDepositCheckbox.addEventListener('change', updateConfirmBtn);
 
     // "Welcome back" recognition: once a valid phone or email is entered, quietly
     // ask the backend whether we've seen this client before (matched by phone OR
@@ -705,6 +732,7 @@ function bootBookingPage() {
         if (bookingSubmitInFlight) return;
         if (!selectedSlot || !nameInput.value.trim()) return;
         if (!isReschedule && !hasFirstAndLastName(nameInput.value)) { if (nameHint) nameHint.style.display = 'block'; return; }
+        if (needsSaturdayDepositAck() && !(satDepositCheckbox && satDepositCheckbox.checked)) return;
 
         bookingSubmitInFlight = true;
         const originalBtnText = confirmBtn.innerHTML;
@@ -730,6 +758,7 @@ function bootBookingPage() {
                 time: selectedSlot,
                 durationMinutes: serviceMinutes,
                 clientNotes: notesInput && notesInput.value ? notesInput.value.trim() : '',
+                saturdayDepositAck: needsSaturdayDepositAck(),
             };
 
         try {
@@ -775,9 +804,11 @@ function bootBookingPage() {
                           ? 'Someone just took that time. Refresh the page and pick another open slot.'
                           : apiMsg === 'server_busy'
                             ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
-                            : apiMsg === 'blocked'
-                              ? 'Booking isn’t available for these details. We’re not able to take this appointment — thank you for understanding.'
-                              : 'Submission failed. Please try again.';
+                            : apiMsg === 'saturday_deposit_ack_required'
+                              ? 'Saturday appointments require a $50 deposit. Please check the deposit box above before submitting.'
+                              : apiMsg === 'blocked'
+                                ? 'Booking isn’t available for these details. We’re not able to take this appointment — thank you for understanding.'
+                                : 'Submission failed. Please try again.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');

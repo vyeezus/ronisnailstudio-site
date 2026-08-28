@@ -1126,6 +1126,15 @@ function handlePublicBookingPost_(d) {
     return jsonResponse_({ status: 'error', message: 'date_too_soon' });
   }
 
+  // Saturday hours are limited and held by a $50 deposit. The booking form makes
+  // the client tick the acknowledgement before Submit unlocks, but this is money,
+  // so it's enforced here too — a request that skips the form can't slip a
+  // Saturday through unacknowledged.
+  const isSaturdayBooking = isSaturdayYmd_(pubDateStr);
+  if (isSaturdayBooking && d.saturdayDepositAck !== true) {
+    return jsonResponse_({ status: 'error', message: 'saturday_deposit_ack_required' });
+  }
+
   const timeTrim = String(d.time || '').trim();
   if (!timeTrim) {
     return jsonResponse_({ status: 'error', message: 'bad_time' });
@@ -1187,7 +1196,8 @@ function handlePublicBookingPost_(d) {
       d.service +
       '\nDurationMinutes: ' +
       durMin +
-      (clientNotes ? '\nClient notes: ' + clientNotes : '');
+      (clientNotes ? '\nClient notes: ' + clientNotes : '') +
+      (isSaturdayBooking ? '\nSaturday: $50 deposit required (acknowledged at booking)' : '');
     markInternalCalendarMutation_();
     const ev = c.createEvent('PENDING: ' + d.clientName, start, end, { description: desc });
     ev.setColor(PENDING_COLOR);
@@ -1209,7 +1219,8 @@ function handlePublicBookingPost_(d) {
       neatTimeEmail,
       ev.getId(),
       actionToken,
-      clientNotes
+      clientNotes,
+      isSaturdayBooking
     );
     MailApp.sendEmail({
       to: MY_EMAIL,
@@ -4730,7 +4741,7 @@ function getAlternateDeclinedClientEmailHtml(name, origDate, origTime, service) 
   return '<div style="font-family:sans-serif;padding:40px;max-width:500px;margin:auto;border:1px solid #f0f0f0;border-radius:12px;"><p style="font-size:16px;color:#1a1a1a;">Hi ' + n + ',</p><p style="font-size:16px;color:#1a1a1a;line-height:1.6;">No problem — we won\'t hold that alternate time. Whenever you\'re ready, you can submit a new booking on our website.</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:20px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody>' + rows + '</tbody></table><p style="font-size:13px;color:#999;text-align:center;margin-top:24px;">Roni\'s Nail Studio</p></div>';
 }
 
-function getRequestEmailHtml(name, service, phone, email, date, time, eventId, actionToken, clientNotes) {
+function getRequestEmailHtml(name, service, phone, email, date, time, eventId, actionToken, clientNotes, isSaturday) {
   const q = 'action=accept&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const qr = 'action=reject&eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const acc = buildBookingActionUrl(q);
@@ -4739,7 +4750,8 @@ function getRequestEmailHtml(name, service, phone, email, date, time, eventId, a
   const modUrl = OWNER_MODIFY_PAGE_BASE + '?eventId=' + encodeURIComponent(eventId) + '&token=' + encodeURIComponent(actionToken);
   const notesTrim = String(clientNotes == null ? '' : clientNotes).trim();
   const notesBlock = notesTrim ? '<p style="margin:12px 0 0 0;padding-top:12px;border-top:1px solid #e8e8e8;"><strong>Notes / requests:</strong><br><span style="white-space:pre-wrap;color:#333;">' + escapeHtml(notesTrim) + '</span></p>' : '';
-  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:500;font-size:20px;text-align:center;">New Booking Request</h2><div style="background:#fafafa;padding:20px;border-radius:8px;margin:20px 0;font-size:15px;line-height:1.6;"><strong>Client:</strong> ' + name + '<br><strong>Service:</strong> ' + service + '<br><strong>Phone:</strong> ' + phone + '<br><strong>Email:</strong> ' + email + '<br><strong>Date:</strong> ' + date + '<br><strong>Time:</strong> ' + time + notesBlock + '</div><div style="text-align:center;"><a href="' + acc + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Approve Request</a><a href="' + modUrl + '" style="background-color:#fff;color:#111;border:1px solid #111;padding:12px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Suggest a different time</a><a href="' + rej + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Decline Request</a></div></div>';
+  const saturdayBlock = isSaturday ? '<div style="background:#fdf4f8;border:1px solid #e3c4d5;border-radius:8px;padding:14px 16px;margin:20px 0;font-size:14px;line-height:1.5;color:#111;"><strong>Saturday appointment &mdash; $50 deposit required.</strong><br>The client agreed on the booking form that this appointment isn\'t accepted until the deposit is received.</div>' : '';
+  return '<div style="font-family:sans-serif;padding:32px;max-width:450px;margin:auto;border:1px solid #eaeaea;border-radius:12px;"><h2 style="color:#111;font-weight:500;font-size:20px;text-align:center;">New Booking Request</h2>' + saturdayBlock + '<div style="background:#fafafa;padding:20px;border-radius:8px;margin:20px 0;font-size:15px;line-height:1.6;"><strong>Client:</strong> ' + name + '<br><strong>Service:</strong> ' + service + '<br><strong>Phone:</strong> ' + phone + '<br><strong>Email:</strong> ' + email + '<br><strong>Date:</strong> ' + date + '<br><strong>Time:</strong> ' + time + notesBlock + '</div><div style="text-align:center;"><a href="' + acc + '" style="background-color:#111;color:white;padding:14px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Approve Request</a><a href="' + modUrl + '" style="background-color:#fff;color:#111;border:1px solid #111;padding:12px;text-decoration:none;border-radius:8px;font-weight:500;display:block;margin-bottom:12px;">Suggest a different time</a><a href="' + rej + '" style="background-color:#fff;color:#dc3545;border:1px solid #dc3545;padding:12px;text-decoration:none;border-radius:8px;display:block;">Decline Request</a></div></div>';
 }
 
 /**
@@ -5072,6 +5084,12 @@ function parseYmdAndTimeLocal_(yyyyMmDd, hhMmSs) {
   const mi = parseInt(tp[1], 10) || 0;
   if (isNaN(y) || isNaN(mo) || isNaN(d) || isNaN(h) || isNaN(mi)) return new Date(NaN);
   return new Date(y, mo, d, h, mi, 0);
+}
+
+/** True when a YYYY-MM-DD string lands on a Saturday, read as a local wall date. */
+function isSaturdayYmd_(yyyyMmDd) {
+  const d = parseYmdAndTimeLocal_(yyyyMmDd, '12:00');
+  return !isNaN(d.getTime()) && d.getDay() === 6;
 }
 
 function isBookingWithinStudioHours_(start, durationMinutes) {
