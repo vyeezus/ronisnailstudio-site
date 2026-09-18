@@ -410,9 +410,13 @@ function bootBookingPage() {
     }
 
     /**
-     * No bookable slot may leave more than 1h empty between existing appointments.
-     * This does NOT enforce a limit from workday opening to the first appointment.
-     * No limit on empty time after the last appointment until closing.
+     * Reject only a genuinely ISOLATED slot — one that would leave more than 1h
+     * empty on BOTH sides at once (a lonely booking that forces her in for a
+     * single appointment with dead time around it). A slot that packs tight
+     * (within 1h) against the previous appointment OR the next one is allowed,
+     * since it only shrinks a gap that already exists rather than creating one.
+     * The open/close boundary counts as a satisfied side: with no neighbour on
+     * that side (before the first appt, or after the last), the slot is fine.
      */
     function slotPassesMaxGapRule(slotStart, slotEnd, dateStr) {
         const hours = hoursForDate(dateStr);
@@ -429,10 +433,6 @@ function bootBookingPage() {
                 break;
             }
         }
-        if (prevBusyEnd != null && tSlot - prevBusyEnd.getTime() > MAX_EMPTY_GAP_MS) {
-            return false;
-        }
-
         let nextStart = null;
         for (let i = 0; i < merged.length; i++) {
             if (merged[i].start.getTime() >= tEnd) {
@@ -440,10 +440,12 @@ function bootBookingPage() {
                 break;
             }
         }
-        if (nextStart != null && nextStart.getTime() - tEnd > MAX_EMPTY_GAP_MS) {
-            return false;
-        }
-        return true;
+
+        // A side is "far" only when a real neighbour on that side is >1h away.
+        // A missing neighbour (open/close boundary) is never "far".
+        const prevFar = prevBusyEnd != null && tSlot - prevBusyEnd.getTime() > MAX_EMPTY_GAP_MS;
+        const nextFar = nextStart != null && nextStart.getTime() - tEnd > MAX_EMPTY_GAP_MS;
+        return !(prevFar && nextFar);
     }
 
     function hasAnyAvailableSlot(dateStr) {
