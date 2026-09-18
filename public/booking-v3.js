@@ -763,17 +763,55 @@ function bootBookingPage() {
                 saturdayDepositAck: needsSaturdayDepositAck(),
             };
 
+        // These are real, final answers from the server — never retry them.
+        const DEFINITIVE_BOOKING_ERRORS = [
+            'date_outside_booking_window', 'date_too_soon', 'invalid_day_or_time',
+            'slot_unavailable', 'saturday_deposit_ack_required', 'blocked',
+            'bad_date', 'bad_time', 'bad_datetime',
+        ];
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        // A booking can succeed on Google while the proxy times out (its function
+        // is killed near 10s, before Google finishes) — the client then sees a 502
+        // for a booking that actually went through. Retrying the SAME slot is safe:
+        // the server recognises the client's own hold and returns success
+        // (idempotent), so we retry quietly on transport failures / server_busy
+        // before surfacing anything. Reschedule keeps a single attempt.
+        const maxAttempts = isReschedule ? 1 : 3;
+
         try {
-            const res = await fetch(SCRIPT_PROXY, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bookingData),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || data.status !== 'success') {
-                const err = new Error(data.message || data.status || 'failed');
-                err.apiMessage = data.message;
-                throw err;
+            let succeeded = false;
+            let lastErr = null;
+            let lastKind = 'transport'; // 'transport' = maybe went through; 'busy' = definitely not
+            for (let attempt = 1; attempt <= maxAttempts && !succeeded; attempt++) {
+                let res, data;
+                try {
+                    res = await fetch(SCRIPT_PROXY, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bookingData),
+                    });
+                    data = await res.json().catch(() => ({}));
+                } catch (netErr) {
+                    lastErr = netErr; lastKind = 'transport'; // network/abort — may have landed
+                    if (attempt < maxAttempts) { await sleep(1500 * attempt); }
+                    continue;
+                }
+                if (res.ok && data && data.status === 'success') { succeeded = true; break; }
+                const apiMsg = data && data.message;
+                if (apiMsg && DEFINITIVE_BOOKING_ERRORS.indexOf(apiMsg) >= 0) {
+                    const e = new Error(apiMsg); e.apiMessage = apiMsg; throw e; // stop, show it
+                }
+                // server_busy means the lock wasn't taken — nothing was created, safe
+                // to retry fresh. Anything else (502/timeout/empty) may have landed.
+                lastKind = apiMsg === 'server_busy' ? 'busy' : 'transport';
+                lastErr = new Error(apiMsg || (data && data.reason) || ('http_' + (res && res.status)));
+                if (attempt < maxAttempts) { await sleep(1500 * attempt); }
+            }
+
+            if (!succeeded) {
+                const e = lastErr || new Error('failed');
+                e.transportKind = lastKind;
+                throw e;
             }
 
             document.getElementById('booking-flow').style.display = 'none';
@@ -810,7 +848,9 @@ function bootBookingPage() {
                               ? 'Saturday appointments require a $50 deposit. Please check the deposit box above before submitting.'
                               : apiMsg === 'blocked'
                                 ? 'Booking isn’t available for these details. We’re not able to take this appointment — thank you for understanding.'
-                                : 'Submission failed. Please try again.';
+                                : (err && err.transportKind === 'busy')
+                                  ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
+                                  : 'We couldn’t confirm your booking just now, but it may already have gone through. Please check your email for a confirmation before booking again — if nothing arrives in a few minutes, contact Roni and we’ll sort it out.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');

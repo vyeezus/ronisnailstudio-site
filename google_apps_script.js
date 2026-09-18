@@ -1158,6 +1158,12 @@ function handlePublicBookingPost_(d) {
   try {
     const end = new Date(start.getTime() + durMin * 60000);
     if (slotOverlapsExistingCalendarEvents_(start, end, [])) {
+      // Idempotent retry: if the only thing in the way is THIS client's own hold
+      // from a submit that went through but timed out at the proxy, the booking
+      // already exists — report success instead of bumping them to another time.
+      if (findOwnPendingHold_(start, end, d.email, d.phone)) {
+        return jsonResponse_({ status: 'success', deduped: true });
+      }
       return jsonResponse_({ status: 'error', message: 'slot_unavailable' });
     }
 
@@ -1222,36 +1228,27 @@ function handlePublicBookingPost_(d) {
       clientNotes,
       isSaturdayBooking
     );
-    MailApp.sendEmail({
+    // The owner email + phone push are notifications, not part of securing the
+    // slot — and MailApp plus the Expo HTTP call are the slowest steps here.
+    // Running them inline pushed the response past the Netlify proxy's ~10s
+    // ceiling, so the client got a 502 even though the booking was already saved.
+    // Hand them to the one-time drain trigger (lands within ~a minute) and return
+    // now that the sheet row + calendar hold are committed. The push carries the
+    // request token so drainDeferredTasks_ can skip it if the 5-min backstop poll
+    // already notified, and mark it notified so the poll won't double-send.
+    enqueueDeferredTask_({
+      kind: 'email',
       to: MY_EMAIL,
       subject: 'New Booking Request: ' + d.clientName,
       htmlBody: requestHtml,
     });
-
-    // Instant push to the owner's phone — parity with the email above, instead of
-    // waiting up to 5 min for checkNewBookingsAndPush (now just a backstop). Mark
-    // this request's token notified so the poll won't send a duplicate. Skip the
-    // marking when the notified set hasn't been seeded yet (no poll run since a
-    // device registered), so the poll's first-run seeding still suppresses a
-    // blast of any pre-existing requests.
-    try {
-      var pushProps = PropertiesService.getScriptProperties();
-      var pushToks = [];
-      try { var ptraw = pushProps.getProperty(PROP_PUSH_TOKENS); pushToks = ptraw ? JSON.parse(ptraw) : []; } catch (pte) { pushToks = []; }
-      if (pushToks.length) {
-        var pushDate = Utilities.formatDate(start, tz, 'EEE, MMM d');
-        sendExpoPush_(pushToks, 'New booking request', d.clientName + ' — ' + pushDate + ' at ' + neatTimeEmail, { type: 'pending' });
-        var pnRaw = pushProps.getProperty(PROP_PUSH_NOTIFIED);
-        if (pnRaw !== null && pnRaw !== undefined) {
-          var pnArr = [];
-          try { pnArr = JSON.parse(pnRaw) || []; } catch (pne) { pnArr = []; }
-          if (pnArr.indexOf(actionToken) < 0) pnArr.push(actionToken);
-          pushProps.setProperty(PROP_PUSH_NOTIFIED, JSON.stringify(capArray_(pnArr, 500)));
-        }
-      }
-    } catch (pushErr) {
-      Logger.log('handlePublicBookingPost_: instant push failed: ' + pushErr);
-    }
+    enqueueDeferredTask_({
+      kind: 'push',
+      token: actionToken,
+      title: 'New booking request',
+      body: d.clientName + ' — ' + Utilities.formatDate(start, tz, 'EEE, MMM d') + ' at ' + neatTimeEmail,
+    });
+    ensureDeferredTrigger_();
 
     return jsonResponse_({ status: 'success' });
   } finally {
@@ -1897,6 +1894,31 @@ function processDeferredTask_(task) {
     var msg = { to: task.to, subject: task.subject, htmlBody: task.htmlBody };
     if (task.name) msg.name = task.name;
     MailApp.sendEmail(msg);
+  } else if (task.kind === 'push') {
+    // Deferred owner push for a new booking request. Mirrors the old inline path:
+    // skip if the 5-min backstop poll already notified this token, otherwise send
+    // and mark it notified so the poll won't double-send. Only marks when the
+    // notified set has been seeded (poll has run), matching the poll's first-run
+    // suppression of pre-existing requests.
+    try {
+      var pushProps = PropertiesService.getScriptProperties();
+      var pnRaw = pushProps.getProperty(PROP_PUSH_NOTIFIED);
+      var pnArr = [];
+      if (pnRaw !== null && pnRaw !== undefined) {
+        try { pnArr = JSON.parse(pnRaw) || []; } catch (e) { pnArr = []; }
+      }
+      if (task.token && pnArr.indexOf(task.token) >= 0) return; // poll beat us to it
+      var pushToks = [];
+      try { var ptraw = pushProps.getProperty(PROP_PUSH_TOKENS); pushToks = ptraw ? JSON.parse(ptraw) : []; } catch (e) { pushToks = []; }
+      if (!pushToks.length) return;
+      sendExpoPush_(pushToks, task.title || 'New booking request', task.body || '', { type: 'pending' });
+      if (task.token && pnRaw !== null && pnRaw !== undefined) {
+        if (pnArr.indexOf(task.token) < 0) pnArr.push(task.token);
+        pushProps.setProperty(PROP_PUSH_NOTIFIED, JSON.stringify(capArray_(pnArr, 500)));
+      }
+    } catch (pushErr) {
+      Logger.log('processDeferredTask_ push failed: ' + pushErr);
+    }
   } else if (task.kind === 'retitle') {
     var ev = CalendarApp.getCalendarById(CALENDAR_ID).getEventById(task.eventId);
     if (ev) {
@@ -5186,6 +5208,43 @@ function slotOverlapsExistingCalendarEvents_(slotStart, slotEnd, ignoreEventIds)
   if (overlapsOnCalendar(PERSONAL_CALENDAR_ID)) return true;
   if (overlapsOnCalendar(BLOCKS_CALENDAR_ID)) return true; // owner time blocks
   return false;
+}
+
+/**
+ * Idempotency for the "it went through but the client saw an error" case: a
+ * public booking POST can succeed on Google while the Netlify proxy times out
+ * (its sync function is killed near 10s, long before Google finishes), so the
+ * client gets a 502 and re-submits the SAME slot. That re-submit now overlaps
+ * the client's OWN just-created hold, and a naive check answers "slot taken" —
+ * which is what pushed a client off her 9:30 onto a later time.
+ *
+ * Detect that self-collision so the retry can be reported as the success it
+ * already is. Match is deliberately tight: the booking calendar only, a timed
+ * event at the exact same start (±1 min), belonging to the same client (email,
+ * or the Phone: line as a fallback). Anyone else's overlap stays a real
+ * conflict. Returns the matching event, or null.
+ */
+function findOwnPendingHold_(slotStart, slotEnd, email, phone) {
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (!cal) return null;
+    const wantEmail = String(email == null ? '' : email).trim().toLowerCase();
+    const wantPhone = String(phone == null ? '' : phone).replace(/\D/g, '');
+    const evs = cal.getEvents(slotStart, slotEnd);
+    for (var i = 0; i < evs.length; i++) {
+      const ev = evs[i];
+      if (ev.isAllDayEvent()) continue;
+      if (Math.abs(ev.getStartTime().getTime() - slotStart.getTime()) > 60000) continue;
+      const desc = String(ev.getDescription() || '');
+      const emailMatch = wantEmail && desc.toLowerCase().indexOf('email: ' + wantEmail) >= 0;
+      const phoneLine = (desc.match(/Phone:\s*([^\n]*)/i) || [])[1] || '';
+      const phoneMatch = wantPhone && wantPhone.length >= 10 && phoneLine.replace(/\D/g, '') === wantPhone;
+      if (emailMatch || phoneMatch) return ev;
+    }
+  } catch (err) {
+    Logger.log('findOwnPendingHold_: ' + err);
+  }
+  return null;
 }
 
 function convertTo24Hour(timeStr) {
