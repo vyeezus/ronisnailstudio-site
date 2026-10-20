@@ -4276,7 +4276,15 @@ function handleOwnerCancelBooking(d) {
     const ev = getEventByIdAnyCalendar_(currentEventId);
     if (ev) {
       markInternalCalendarMutation_();
-      ev.deleteEvent();
+      try {
+        ev.deleteEvent();
+      } catch (err) {
+        // getEventById still returns events already deleted in Google Calendar
+        // (e.g. she removed it there by hand), and deleting those throws. The
+        // event being gone is exactly what we wanted, so carry on and mark the
+        // row; anything else is a real failure.
+        if (!/does not exist|already been deleted/i.test(String(err && err.message))) throw err;
+      }
     }
     sheet.getRange(rowIndex, 8).setValue('CANCELLED');
     sheet.getRange(rowIndex, 11).setValue('');
