@@ -4225,6 +4225,11 @@ function sendTestPush() {
  * event, marks the row CANCELLED, and emails the client the SAME cancellation
  * email the website's sync flow sends. Admin-secret gated; additive (does not
  * touch any existing handler).
+ *
+ * d.silent = true skips every email (client and owner). Used to quietly delete
+ * a stale alternate-time proposal that's no longer valid; the client's old
+ * accept/decline links then show "no longer active" since the row isn't
+ * MOD_PROPOSED anymore.
  */
 function handleOwnerCancelBooking(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
@@ -4286,6 +4291,9 @@ function handleOwnerCancelBooking(d) {
   // BLOCKED = owner time block; removing it is silent (no client, and the owner
   // doesn't need an email about deleting her own block).
   const wasBlock = rowStatus === 'BLOCKED';
+  if (d.silent === true || d.silent === 'true') {
+    return jsonResponse_({ status: 'success', silent: true });
+  }
   if (!wasBlock && clientEmail && !appointmentRowPassed_(dateVal, timeStr)) {
     const html = getCalendarDeletedClientEmailHtml(clientName, neatD, neatTime, service);
     MailApp.sendEmail({

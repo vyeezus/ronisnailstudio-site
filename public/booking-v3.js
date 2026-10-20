@@ -195,6 +195,7 @@ function bootBookingPage() {
     let selectedDate = null;
     let selectedSlot = null;
     let busyTimes = [];
+    let busyLoadFailed = false;
 
     const today = new Date();
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -332,18 +333,32 @@ function bootBookingPage() {
         });
     }
 
+    /**
+     * Returns false when the busy feed couldn't be loaded at all. It must NOT
+     * fall back to an empty list: that paints every booked slot as open, and the
+     * client then gets "someone just took that time" on nearly everything she
+     * picks (what happened on a flaky phone connection, 2026-10).
+     */
     async function fetchBusyTimes(ignoreEventId) {
         try {
             await loadJsonpTwice_(() => loadCalendarJsonp(SCRIPT_PROXY, ignoreEventId));
+            return true;
         } catch (e) {
             console.warn('Proxy /api/booking failed; loading calendar from Google directly.', e);
             try {
                 await loadJsonpTwice_(() => loadCalendarJsonp(SCRIPT_DIRECT, ignoreEventId));
+                return true;
             } catch (e2) {
                 console.error('Calendar JSONP failed entirely.', e2);
-                busyTimes = [];
+                return false;
             }
         }
+    }
+
+    function showAvailabilityLoadError() {
+        bookingFlow.innerHTML =
+            '<p style="text-align:center;padding:2rem;color:var(--text-muted);">We couldn’t load the available times just now. ' +
+            '<a href="#" onclick="location.reload();return false;">Tap here to try again</a>.</p>';
     }
 
     /** Max empty time (ms) allowed before a new booking (after open / previous appt) or after it (before next appt). */
@@ -562,6 +577,17 @@ function bootBookingPage() {
         currentMonth = nxt.month;
         renderCalendar();
     });
+
+    /** After a "taken" answer, pull the real calendar so she isn't picking blind again. */
+    async function refreshAfterTakenSlot() {
+        if (!(await fetchBusyTimes(''))) return;
+        renderCalendar(); // re-marks selectedDate if it still has openings
+        if (selectedDate) {
+            selectedSlot = null;
+            renderTimeSlots(selectedDate);
+            updateConfirmBtn();
+        }
+    }
 
     function selectDate(dateStr, btnEl) {
         const ae = document.activeElement;
@@ -841,7 +867,7 @@ function bootBookingPage() {
                       : apiMsg === 'invalid_day_or_time'
                         ? 'That day or time isn’t available. Refresh the page and choose an open slot from the calendar.'
                         : apiMsg === 'slot_unavailable'
-                          ? 'Someone just took that time. Refresh the page and pick another open slot.'
+                          ? 'Someone just took that time. The times above are now up to date — please pick another.'
                           : apiMsg === 'server_busy'
                             ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
                             : apiMsg === 'saturday_deposit_ack_required'
@@ -852,6 +878,7 @@ function bootBookingPage() {
                                   ? 'We’re handling a lot of requests right now. Please wait a moment and try again.'
                                   : 'We couldn’t confirm your booking just now, but it may already have gone through. Please check your email for a confirmation before booking again — if nothing arrives in a few minutes, contact Roni and we’ll sort it out.';
             bookError.innerHTML = `<div class="booking-error">${msg}</div>`;
+            if (apiMsg === 'slot_unavailable') refreshAfterTakenSlot();
             confirmBtn.classList.remove('is-submitting');
             confirmBtn.removeAttribute('aria-busy');
             confirmBtn.innerHTML = originalBtnText;
@@ -875,6 +902,7 @@ function bootBookingPage() {
 
     async function initBooking() {
         let ignoreEventId = '';
+        busyLoadFailed = false;
 
         if (isReschedule) {
             if (!rescheduleEventId || !rescheduleToken) {
@@ -943,9 +971,11 @@ function bootBookingPage() {
                 tagsContainer.after(summaryInfo);
             }
 
-            await Promise.all([loadWorkHours(), fetchBusyTimes(ignoreEventId)]);
+            const [, busyOk] = await Promise.all([loadWorkHours(), fetchBusyTimes(ignoreEventId)]);
+            busyLoadFailed = !busyOk;
         } finally {
-            renderCalendar();
+            if (busyLoadFailed) showAvailabilityLoadError();
+            else renderCalendar();
             if (loadingEl) {
                 loadingEl.hidden = true;
                 loadingEl.style.display = 'none';
