@@ -2341,6 +2341,12 @@ function doPost(e) {
     if (isJsonBoolTrue_(d.ownerNotifyWaitlist)) {
       return handleOwnerNotifyWaitlist(d);
     }
+    if (isJsonBoolTrue_(d.ownerAnnouncementStatus)) {
+      return handleOwnerAnnouncementStatus(d);
+    }
+    if (isJsonBoolTrue_(d.ownerSendAnnouncement)) {
+      return handleOwnerSendAnnouncement(d);
+    }
     if (isJsonBoolTrue_(d.ownerListBlocked)) {
       return handleOwnerListBlocked(d);
     }
@@ -5282,4 +5288,221 @@ function convertTo24Hour(timeStr) {
   if (modifier === 'AM' && hours === 12) h = 0;
   if (modifier !== 'AM' && modifier !== 'PM') h = hours;
   return String(h).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':00';
+}
+
+/** Subject line for the January 2027 studio-updates announcement. */
+const ANNOUNCEMENT_SUBJECT = 'a few updates coming january 1st ♡';
+
+/**
+ * The announcement body. Same card styling as the confirmation emails so it
+ * reads as coming from the studio rather than a mailing tool.
+ */
+function getAnnouncementEmailHtml() {
+  return '<div style="font-family:sans-serif;padding:40px;max-width:500px;margin:auto;border:1px solid #f0f0f0;border-radius:12px;background-color:#ffffff;"><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 18px 0;">hi loves! ♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">with the new year approaching, i wanted to share a few updates coming to the studio <strong>january 1st, 2027</strong>!</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">natural nails only ⋆˚♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">i&rsquo;ve decided to officially discontinue gel-x services and focus entirely on natural nails moving forward! i&rsquo;m excited to continue growing and specializing in what i love most.</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">structured gel pricing &amp; booking</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">structured gel manicures will have a new base price of <strong>$85</strong> (previously $75 for refills and $80 for new sets).</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">the separate &ldquo;refill&rdquo; option will be removed to simplify booking, as both appointments require essentially the same time and care. the service itself isn&rsquo;t changing, just the pricing and booking options!</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">a little extra love for you ♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">as a thank you for your continued support, i&rsquo;ll also be increasing a couple of discounts:</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 28px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody><tr><td style="padding:12px 14px;border-bottom:1px solid #eee;vertical-align:top;width:120px;"><span style="color:#666;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Cash</span></td><td style="padding:12px 14px;border-bottom:1px solid #eee;color:#1a1a1a;font-size:16px;line-height:1.5;"><strong>$10 off</strong> <span style="color:#888;">(previously $5)</span></td></tr><tr><td style="padding:12px 14px;vertical-align:top;"><span style="color:#666;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Refer a friend</span></td><td style="padding:12px 14px;color:#1a1a1a;font-size:16px;line-height:1.5;"><strong>$15 off for both of you</strong><br><span style="color:#666;font-size:14px;">new clients get $15 off their first appointment, and you get $15 off your next one once they&rsquo;ve come in.</span></td></tr></tbody></table><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">these changes are part of my continued growth as a nail artist, and i&rsquo;m so grateful to have you all along for the journey.</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">thank you for trusting me with your nails and supporting my little business. i can&rsquo;t wait to see what 2027 brings! ₊˚♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0;">with love,<br>your nail tech ♡</p><hr style="border:none;border-top:1px solid #f0f0f0;margin:36px 0 20px 0;"><p style="font-size:13px;color:#999;text-align:center;margin:0;">Roni&rsquo;s Nail Studio · 150 Wood Rd, Braintree, MA, Suite 304-E</p></div>';
+}
+
+/* ===========================================================================
+ * Announcements — one-off emails to the whole client list.
+ *
+ * Recipients mirror the admin app's CLIENTS tab, not the raw Bookings rows:
+ * deduped on the same derived key the app uses (phone digits, else
+ * name|email, else name), so a regular who has booked twenty times is one
+ * person, not twenty emails. Blocks, unclaimed links and blocked clients are
+ * excluded.
+ *
+ * Sends are logged per campaign so a run can be repeated safely: Gmail caps a
+ * consumer account at ~100 recipients a day, so a large list has to go out
+ * over several days and a re-run must pick up where it stopped rather than
+ * mailing everyone again.
+ * ======================================================================== */
+
+const ANNOUNCEMENT_LOG_SHEET_NAME = 'AnnouncementLog';
+
+function getAnnouncementLogSheet_() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(ANNOUNCEMENT_LOG_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(ANNOUNCEMENT_LOG_SHEET_NAME);
+    sh.appendRow(['campaign', 'email', 'name', 'sentAt']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** Lowercased emails already mailed for this campaign. */
+function announcementAlreadySent_(campaign) {
+  const want = String(campaign || '').trim();
+  const out = Object.create(null);
+  const data = getAnnouncementLogSheet_().getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim() !== want) continue;
+    const e = String(data[i][1] || '').trim().toLowerCase();
+    if (e) out[e] = true;
+  }
+  return out;
+}
+
+/**
+ * The client list as the admin app shows it: one entry per PERSON, newest
+ * booking's details winning, with an email, not blocked.
+ */
+function announcementRecipients_() {
+  const ss = getCRMSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  const data = sheet.getDataRange().getValues();
+
+  const rows = [];
+  for (var i = 1; i < data.length; i++) {
+    const status = normalizeSheetStatus_(data[i][7]);
+    // Time blocks and unclaimed booking links are not people.
+    if (status === 'BLOCKED' || status === 'INVITED') continue;
+    const name = String(data[i][1] || '').trim();
+    const email = String(data[i][6] || '').trim();
+    if (!name || !email || email.indexOf('@') < 0) continue;
+    rows.push({
+      name: name,
+      phone: String(data[i][2] || '').trim(),
+      email: email,
+      startMs: appointmentRowStartMs_(data[i][4], data[i][5]),
+    });
+  }
+  // Newest first so the freshest contact details win, exactly as
+  // deduplicateClients does in the app.
+  rows.sort(function (a, b) {
+    const av = isNaN(a.startMs) ? 0 : a.startMs;
+    const bv = isNaN(b.startMs) ? 0 : b.startMs;
+    return bv - av;
+  });
+
+  const seen = Object.create(null);
+  const out = [];
+  for (var r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    // Same derived identity as clientKeyForBooking in the app.
+    const phoneDigits = row.phone.replace(/\D/g, '');
+    const key = phoneDigits
+      ? phoneDigits
+      : (row.name && row.email ? row.name.toLowerCase() + '|' + row.email.toLowerCase() : row.name.toLowerCase());
+    if (!key || seen[key]) continue;
+    if (isClientBlocked_(row.phone, row.email)) continue;
+    seen[key] = true;
+    out.push({ name: row.name, email: row.email, phone: row.phone });
+  }
+  return out;
+}
+
+/** Recipient count, how many already went out, and today's remaining quota. */
+function handleOwnerAnnouncementStatus(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const campaign = String(d.campaign || '').trim();
+  if (!campaign) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const recipients = announcementRecipients_();
+  const sent = announcementAlreadySent_(campaign);
+  var remaining = 0;
+  for (var i = 0; i < recipients.length; i++) {
+    if (!sent[recipients[i].email.toLowerCase()]) remaining++;
+  }
+  var quota = 0;
+  try {
+    quota = MailApp.getRemainingDailyQuota();
+  } catch (err) {
+    quota = 0;
+  }
+  return jsonResponse_({
+    status: 'success',
+    total: recipients.length,
+    sent: recipients.length - remaining,
+    remaining: remaining,
+    quotaToday: quota,
+  });
+}
+
+/**
+ * Send the announcement.
+ *
+ * `testTo` sends ONE copy to that address and logs nothing, so it can be run
+ * as many times as she likes. Otherwise it mails unsent recipients, capped by
+ * `limit` and by the account's remaining Gmail quota, logging each as it goes
+ * so the next run continues rather than repeats.
+ */
+function handleOwnerSendAnnouncement(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const campaign = String(d.campaign || '').trim();
+  if (!campaign) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const subject = String(d.subject || '').trim() || ANNOUNCEMENT_SUBJECT;
+  const html = getAnnouncementEmailHtml();
+
+  const testTo = String(d.testTo || '').trim();
+  if (testTo) {
+    MailApp.sendEmail({
+      to: testTo,
+      name: "Roni's Nail Studio",
+      subject: '[TEST] ' + subject,
+      htmlBody:
+        '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;max-width:500px;margin:0 auto 16px;">' +
+        '<strong>Test copy.</strong> Clients have NOT been emailed. Their version has no banner and no [TEST] in the subject.</p>' +
+        html,
+    });
+    return jsonResponse_({ status: 'success', test: true, sentTo: testTo });
+  }
+
+  const recipients = announcementRecipients_();
+  const already = announcementAlreadySent_(campaign);
+  var quota = 0;
+  try {
+    quota = MailApp.getRemainingDailyQuota();
+  } catch (err) {
+    quota = 0;
+  }
+  // Leave a little headroom so a booking confirmation later today isn't
+  // starved by the blast.
+  const reserve = 10;
+  var budget = Math.max(0, quota - reserve);
+  const askedLimit = Math.floor(Number(d.limit));
+  if (isFinite(askedLimit) && askedLimit > 0) budget = Math.min(budget, askedLimit);
+  if (budget <= 0) {
+    return jsonResponse_({ status: 'error', message: 'quota_exhausted' });
+  }
+
+  const log = getAnnouncementLogSheet_();
+  var sent = 0;
+  const failed = [];
+  for (var i = 0; i < recipients.length && sent < budget; i++) {
+    const rcp = recipients[i];
+    if (already[rcp.email.toLowerCase()]) continue;
+    try {
+      MailApp.sendEmail({
+        to: rcp.email,
+        name: "Roni's Nail Studio",
+        subject: subject,
+        htmlBody: html,
+      });
+      // Logged immediately, one row at a time: if this run dies partway, the
+      // next one must not re-mail whoever already got it.
+      log.appendRow([campaign, rcp.email, rcp.name, new Date()]);
+      SpreadsheetApp.flush();
+      already[rcp.email.toLowerCase()] = true;
+      sent++;
+    } catch (mailErr) {
+      failed.push(rcp.email);
+      Logger.log('handleOwnerSendAnnouncement: failed for ' + rcp.email + ': ' + mailErr);
+    }
+  }
+  var remaining = 0;
+  for (var k = 0; k < recipients.length; k++) {
+    if (!already[recipients[k].email.toLowerCase()]) remaining++;
+  }
+  return jsonResponse_({
+    status: 'success',
+    sent: sent,
+    remaining: remaining,
+    total: recipients.length,
+    failed: failed.length,
+  });
 }
