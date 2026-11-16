@@ -79,8 +79,8 @@ function bootBookingPage() {
             const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
             const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
             if (!isFinite(st) || !isFinite(en)) continue;
-            const start = Math.floor(st);
-            const end = Math.floor(en);
+            const start = Math.round(st * 4) / 4;
+            const end = Math.round(en * 4) / 4;
             if (start < 0 || end > 24 || start >= end) continue;
             nextWeekly[d] = { start, end };
         }
@@ -98,8 +98,8 @@ function bootBookingPage() {
                 const st = typeof h.start === 'number' ? h.start : parseFloat(h.start);
                 const en = typeof h.end === 'number' ? h.end : parseFloat(h.end);
                 if (!isFinite(st) || !isFinite(en)) continue;
-                const start = Math.floor(st);
-                const end = Math.floor(en);
+                const start = Math.round(st * 4) / 4;
+                const end = Math.round(en * 4) / 4;
                 if (start < 0 || end > 24 || start >= end) continue;
                 nextOv[dk] = { start, end };
             }
@@ -370,7 +370,22 @@ function bootBookingPage() {
     function localWallDateTime(dateStr, hour, minute) {
         const p = dateStr.split('-').map(Number);
         if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return new Date(NaN);
-        return new Date(p[0], p[1] - 1, p[2], hour, minute, 0);
+        // `hour` may be a quarter-hour decimal (9.5 = 9:30 open); Date() would
+        // truncate it, so fold it into minutes.
+        return new Date(p[0], p[1] - 1, p[2], 0, Math.round(hour * 60) + minute, 0);
+    }
+
+    /** Slot start times ({h, m}) on the 15-min grid from opening up to closing. */
+    function slotStartsForHours(hours) {
+        const out = [];
+        const openMin = Math.round(hours.start * 60);
+        const closeMin = Math.round(hours.end * 60);
+        for (let t = Math.ceil(openMin / 15) * 15; t < closeMin; t += 15) {
+            const m = t % 60;
+            if (SLOT_START_MINUTES.indexOf(m) === -1) continue;
+            out.push({ h: Math.floor(t / 60), m });
+        }
+        return out;
     }
 
     // Saturday hours are limited and held by a $50 deposit, so a Saturday request
@@ -470,8 +485,8 @@ function bootBookingPage() {
         if (dateStr > maxBookableYmd) return false;
         const hours = hoursForDate(dateStr);
         if (!hours) return false;
-        for (let h = hours.start; h < hours.end; h++) {
-            for (const m of SLOT_START_MINUTES) {
+        for (const { h, m } of slotStartsForHours(hours)) {
+            {
                 const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);
 
@@ -628,8 +643,8 @@ function bootBookingPage() {
             slotsContainer.innerHTML = '';
             return;
         }
-        for (let h = hours.start; h < hours.end; h++) {
-            for (const m of SLOT_START_MINUTES) {
+        for (const { h, m } of slotStartsForHours(hours)) {
+            {
                 const timeStr12 = format12h(h, m);
                 const slotStart = localWallDateTime(dateStr, h, m);
                 const slotEnd = new Date(slotStart.getTime() + serviceMinutes * 60000);

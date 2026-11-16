@@ -559,7 +559,8 @@ function getWorkHoursFromSheet_() {
       if (rawD === '' || rawD === null || rawD === undefined) continue;
       const st = Number(data[i][1]);
       const en = Number(data[i][2]);
-      if (!isFinite(st) || !isFinite(en) || st !== Math.floor(st) || en !== Math.floor(en)) continue;
+      // Quarter-hour decimals (9.25 = 9:15) since 2026-11; whole hours before.
+      if (!isFinite(st) || !isFinite(en) || !isQuarterHour_(st) || !isQuarterHour_(en)) continue;
       const key = sheetCellToScheduleKey_(rawD);
       if (key.kind === 'date' && st === 0 && en === 0) {
         dateOverrides[key.ymd] = { open: false };
@@ -1536,6 +1537,16 @@ function syncCalendarToSpreadsheetBody_(dryRun) {
   );
 }
 
+/** Studio hours are decimal hours on a 15-minute grid (9.25 = 9:15 AM). */
+function roundToQuarterHour_(v) {
+  const n = Number(v);
+  return isFinite(n) ? Math.round(n * 4) / 4 : NaN;
+}
+
+function isQuarterHour_(n) {
+  return isFinite(n) && Math.round(n * 4) === n * 4;
+}
+
 function handleAdminSetWorkHours(d) {
   const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
   if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
@@ -1567,8 +1578,8 @@ function handleAdminSetWorkHours(d) {
   for (let day = 0; day <= 6; day++) {
     const h = d.hours[day] !== undefined && d.hours[day] !== null ? d.hours[day] : d.hours[String(day)];
     if (!h || h.open !== true) continue;
-    const st = Math.floor(Number(h.start));
-    const en = Math.floor(Number(h.end));
+    const st = roundToQuarterHour_(h.start);
+    const en = roundToQuarterHour_(h.end);
     if (!isFinite(st) || !isFinite(en) || st < 0 || st > 23 || en < 1 || en > 24 || st >= en) continue;
     const anchor = /^\d{4}-\d{2}-\d{2}$/.test(String(h.biweeklyAnchor || '').trim())
       ? String(h.biweeklyAnchor).trim()
@@ -1589,8 +1600,8 @@ function handleAdminSetWorkHours(d) {
       anyOpen = true;
       continue;
     }
-    const ost = Math.floor(Number(oh.start));
-    const oen = Math.floor(Number(oh.end));
+    const ost = roundToQuarterHour_(oh.start);
+    const oen = roundToQuarterHour_(oh.end);
     if (!isFinite(ost) || !isFinite(oen) || ost < 0 || ost > 23 || oen < 1 || oen > 24 || ost >= oen) continue;
     rows.push([ymd, ost, oen, '']);
     anyOpen = true;
@@ -2340,6 +2351,15 @@ function doPost(e) {
     }
     if (isJsonBoolTrue_(d.ownerNotifyWaitlist)) {
       return handleOwnerNotifyWaitlist(d);
+    }
+    if (isJsonBoolTrue_(d.ownerListAnnouncements)) {
+      return handleOwnerListAnnouncements(d);
+    }
+    if (isJsonBoolTrue_(d.ownerSaveAnnouncement)) {
+      return handleOwnerSaveAnnouncement(d);
+    }
+    if (isJsonBoolTrue_(d.ownerDeleteAnnouncement)) {
+      return handleOwnerDeleteAnnouncement(d);
     }
     if (isJsonBoolTrue_(d.ownerAnnouncementStatus)) {
       return handleOwnerAnnouncementStatus(d);
@@ -5191,8 +5211,10 @@ function isBookingWithinStudioHours_(start, durationMinutes) {
   const y = start.getFullYear();
   const mo = start.getMonth();
   const day = start.getDate();
-  const workStart = new Date(y, mo, day, wh.start, 0, 0);
-  const workEnd = new Date(y, mo, day, wh.end, 0, 0);
+  // Hours can be quarter-hour decimals; Date() truncates a fractional hour
+  // argument, so go through minutes or 9:30 opening would read as 9:00.
+  const workStart = new Date(y, mo, day, 0, Math.round(wh.start * 60), 0);
+  const workEnd = new Date(y, mo, day, 0, Math.round(wh.end * 60), 0);
   const slotEnd = new Date(start.getTime() + dm * 60000);
   return start >= workStart && slotEnd <= workEnd;
 }
@@ -5291,18 +5313,12 @@ function convertTo24Hour(timeStr) {
 }
 
 /** Subject line for the January 2027 studio-updates announcement. */
-const ANNOUNCEMENT_SUBJECT = 'a few updates coming january 1st ♡';
-
-/**
- * The announcement body. Same card styling as the confirmation emails so it
- * reads as coming from the studio rather than a mailing tool.
- */
-function getAnnouncementEmailHtml() {
-  return '<div style="font-family:sans-serif;padding:40px;max-width:500px;margin:auto;border:1px solid #f0f0f0;border-radius:12px;background-color:#ffffff;"><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 18px 0;">hi loves! ♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">with the new year approaching, i wanted to share a few updates coming to the studio <strong>january 1st, 2027</strong>!</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">natural nails only ⋆˚♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">i&rsquo;ve decided to officially discontinue gel-x services and focus entirely on natural nails moving forward! i&rsquo;m excited to continue growing and specializing in what i love most.</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">structured gel pricing &amp; booking</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">structured gel manicures will have a new base price of <strong>$85</strong> (previously $75 for refills and $80 for new sets).</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">the separate &ldquo;refill&rdquo; option will be removed to simplify booking, as both appointments require essentially the same time and care. the service itself isn&rsquo;t changing, just the pricing and booking options!</p><p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">a little extra love for you ♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">as a thank you for your continued support, i&rsquo;ll also be increasing a couple of discounts:</p><table style="width:100%;border-collapse:collapse;background:#fafafa;border-radius:8px;margin:0 0 28px 0;" cellpadding="0" cellspacing="0" role="presentation"><tbody><tr><td style="padding:12px 14px;border-bottom:1px solid #eee;vertical-align:top;width:120px;"><span style="color:#666;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Cash</span></td><td style="padding:12px 14px;border-bottom:1px solid #eee;color:#1a1a1a;font-size:16px;line-height:1.5;"><strong>$10 off</strong> <span style="color:#888;">(previously $5)</span></td></tr><tr><td style="padding:12px 14px;vertical-align:top;"><span style="color:#666;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Refer a friend</span></td><td style="padding:12px 14px;color:#1a1a1a;font-size:16px;line-height:1.5;"><strong>$15 off for both of you</strong><br><span style="color:#666;font-size:14px;">new clients get $15 off their first appointment, and you get $15 off your next one once they&rsquo;ve come in.</span></td></tr></tbody></table><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 14px 0;">these changes are part of my continued growth as a nail artist, and i&rsquo;m so grateful to have you all along for the journey.</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 28px 0;">thank you for trusting me with your nails and supporting my little business. i can&rsquo;t wait to see what 2027 brings! ₊˚♡</p><p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0;">with love,<br>your nail tech ♡</p><hr style="border:none;border-top:1px solid #f0f0f0;margin:36px 0 20px 0;"><p style="font-size:13px;color:#999;text-align:center;margin:0;">Roni&rsquo;s Nail Studio · 150 Wood Rd, Braintree, MA, Suite 304-E</p></div>';
-}
-
 /* ===========================================================================
  * Announcements — one-off emails to the whole client list.
+ *
+ * She writes these in the app; nothing here is hard-coded. Each announcement is
+ * a row in the Announcements tab (subject + plain-text body), converted to the
+ * studio's house email styling at send time so she never touches HTML.
  *
  * Recipients mirror the admin app's CLIENTS tab, not the raw Bookings rows:
  * deduped on the same derived key the app uses (phone digits, else
@@ -5310,28 +5326,92 @@ function getAnnouncementEmailHtml() {
  * person, not twenty emails. Blocks, unclaimed links and blocked clients are
  * excluded.
  *
- * Sends are logged per campaign so a run can be repeated safely: Gmail caps a
- * consumer account at ~100 recipients a day, so a large list has to go out
- * over several days and a re-run must pick up where it stopped rather than
- * mailing everyone again.
+ * Sends are logged per announcement so a run can be repeated safely: Gmail
+ * caps a consumer account at ~100 recipients a day, so a large list goes out
+ * over several days and a re-run picks up where it stopped.
  * ======================================================================== */
 
 const ANNOUNCEMENT_LOG_SHEET_NAME = 'AnnouncementLog';
+const ANNOUNCEMENTS_SHEET_NAME = 'Announcements';
 
 function getAnnouncementLogSheet_() {
   const ss = getCRMSpreadsheet();
   let sh = ss.getSheetByName(ANNOUNCEMENT_LOG_SHEET_NAME);
   if (!sh) {
     sh = ss.insertSheet(ANNOUNCEMENT_LOG_SHEET_NAME);
-    sh.appendRow(['campaign', 'email', 'name', 'sentAt']);
+    sh.appendRow(['announcementId', 'email', 'name', 'sentAt']);
     sh.setFrozenRows(1);
   }
   return sh;
 }
 
-/** Lowercased emails already mailed for this campaign. */
-function announcementAlreadySent_(campaign) {
-  const want = String(campaign || '').trim();
+function getAnnouncementsSheet_() {
+  const ss = getCRMSpreadsheet();
+  let sh = ss.getSheetByName(ANNOUNCEMENTS_SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(ANNOUNCEMENTS_SHEET_NAME);
+    sh.appendRow(['id', 'subject', 'body', 'createdAt', 'updatedAt']);
+    sh.setFrozenRows(1);
+    // Ids are text; left as numbers Sheets would reformat them.
+    sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
+    // Seed the January announcement that was drafted before announcements
+    // became editable, so it survives as an ordinary editable row.
+    const now = new Date();
+    sh.appendRow(['a' + String(now.getTime()), JAN_2027_SEED_SUBJECT, janSeedBody_(), now, now]);
+    SpreadsheetApp.flush();
+  }
+  return sh;
+}
+
+const JAN_2027_SEED_SUBJECT = 'a few updates coming january 1st \u2661';
+
+function janSeedBody_() {
+  return [
+    'hi loves! \u2661',
+    '',
+    'with the new year approaching, i wanted to share a few updates coming to the studio **january 1st, 2027**!',
+    '',
+    '## natural nails only \u22c6\u02da\u2661',
+    '',
+    'i\u2019ve decided to officially discontinue gel-x services and focus entirely on natural nails moving forward! i\u2019m excited to continue growing and specializing in what i love most.',
+    '',
+    '## structured gel pricing & booking',
+    '',
+    'structured gel manicures will have a new base price of **$85** (previously $75 for refills and $80 for new sets).',
+    '',
+    'the separate \u201crefill\u201d option will be removed to simplify booking, as both appointments require essentially the same time and care. the service itself isn\u2019t changing, just the pricing and booking options!',
+    '',
+    '## a little extra love for you \u2661',
+    '',
+    'as a thank you for your continued support, i\u2019ll also be increasing a couple of discounts:',
+    '',
+    'cash \u2014 **$10 off** (previously $5)',
+    'refer a friend \u2014 **$15 off for both of you**: new clients get $15 off their first appointment, and you get $15 off your next one once they\u2019ve come in.',
+    '',
+    'these changes are part of my continued growth as a nail artist, and i\u2019m so grateful to have you all along for the journey.',
+    '',
+    'thank you for trusting me with your nails and supporting my little business. i can\u2019t wait to see what 2027 brings! \u208a\u02da\u2661',
+    '',
+    'with love,',
+    'your nail tech \u2661',
+  ].join('\n');
+}
+
+function announcementRowToObj_(row) {
+  const created = row[3];
+  const updated = row[4];
+  return {
+    id: String(row[0] == null ? '' : row[0]).trim(),
+    subject: String(row[1] == null ? '' : row[1]),
+    body: String(row[2] == null ? '' : row[2]),
+    createdAtMs: created instanceof Date && !isNaN(created.getTime()) ? created.getTime() : null,
+    updatedAtMs: updated instanceof Date && !isNaN(updated.getTime()) ? updated.getTime() : null,
+  };
+}
+
+/** Emails already mailed for this announcement, lowercased. */
+function announcementAlreadySent_(announcementId) {
+  const want = String(announcementId || '').trim();
   const out = Object.create(null);
   const data = getAnnouncementLogSheet_().getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
@@ -5343,6 +5423,32 @@ function announcementAlreadySent_(campaign) {
 }
 
 /**
+ * The block list loaded ONCE, as lookup maps.
+ *
+ * isClientBlocked_ re-reads the whole sheet on every call, which is fine for a
+ * single booking but was being called per client while deduping the list —
+ * hundreds of spreadsheet reads, so the status call never returned inside the
+ * app's timeout and the send button stayed disabled.
+ */
+function blockedIndex_() {
+  const phones = Object.create(null);
+  const emails = Object.create(null);
+  try {
+    const data = getBlockedSheet_().getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      const p = normalizePhoneDigits_(data[i][0]);
+      const e = String(data[i][1] == null ? '' : data[i][1]).trim().toLowerCase();
+      if (p) phones[p] = true;
+      if (e) emails[e] = true;
+    }
+  } catch (err) {
+    // Fail open: a spreadsheet hiccup must not silently empty the list.
+    Logger.log('blockedIndex_ error (treating nobody as blocked): ' + err);
+  }
+  return { phones: phones, emails: emails };
+}
+
+/**
  * The client list as the admin app shows it: one entry per PERSON, newest
  * booking's details winning, with an email, not blocked.
  */
@@ -5350,6 +5456,7 @@ function announcementRecipients_() {
   const ss = getCRMSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
+  const blocked = blockedIndex_();
 
   const rows = [];
   for (var i = 1; i < data.length; i++) {
@@ -5384,11 +5491,137 @@ function announcementRecipients_() {
       ? phoneDigits
       : (row.name && row.email ? row.name.toLowerCase() + '|' + row.email.toLowerCase() : row.name.toLowerCase());
     if (!key || seen[key]) continue;
-    if (isClientBlocked_(row.phone, row.email)) continue;
+    if (blocked.phones[normalizePhoneDigits_(row.phone)] || blocked.emails[row.email.toLowerCase()]) continue;
     seen[key] = true;
     out.push({ name: row.name, email: row.email, phone: row.phone });
   }
   return out;
+}
+
+/** Escape, then turn **this** into bold. Escaping first keeps the tags ours. */
+function announcementInline_(text) {
+  return escapeHtml(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+/**
+ * Wrap her plain-text body in the studio's house email card.
+ *
+ * Deliberately tiny, because she types this on a phone: blank lines separate
+ * paragraphs, a single newline is a line break, a line starting with "## "
+ * becomes a pink section heading, and **like this** is bold. Everything is
+ * escaped first, so she can type an ampersand or an angle bracket without
+ * breaking the email.
+ */
+function announcementBodyToHtml_(body) {
+  const text = String(body == null ? '' : body).replace(/\r\n/g, '\n').trim();
+  const blocks = text.split(/\n\s*\n/);
+  var html = '';
+  for (var i = 0; i < blocks.length; i++) {
+    const block = blocks[i].trim();
+    if (!block) continue;
+    if (block.indexOf('## ') === 0) {
+      html +=
+        '<p style="font-size:15px;color:#b2739a;line-height:1.6;margin:0 0 8px 0;font-weight:600;letter-spacing:0.02em;">' +
+        announcementInline_(block.slice(3).trim()) +
+        '</p>';
+      continue;
+    }
+    const lines = block.split('\n').map(function (l) { return announcementInline_(l.trim()); });
+    html +=
+      '<p style="font-size:16px;color:#1a1a1a;line-height:1.7;margin:0 0 20px 0;">' +
+      lines.join('<br>') +
+      '</p>';
+  }
+  return (
+    '<div style="font-family:sans-serif;padding:40px;max-width:500px;margin:auto;border:1px solid #f0f0f0;border-radius:12px;background-color:#ffffff;">' +
+    html +
+    '<hr style="border:none;border-top:1px solid #f0f0f0;margin:36px 0 20px 0;">' +
+    '<p style="font-size:13px;color:#999;text-align:center;margin:0;">Roni\'s Nail Studio &middot; ' +
+    escapeHtml(STUDIO_ADDRESS) +
+    '</p></div>'
+  );
+}
+
+function handleOwnerListAnnouncements(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const data = getAnnouncementsSheet_().getDataRange().getValues();
+  const out = [];
+  for (var i = 1; i < data.length; i++) {
+    const a = announcementRowToObj_(data[i]);
+    if (a.id) out.push(a);
+  }
+  out.sort(function (a, b) { return (b.updatedAtMs || 0) - (a.updatedAtMs || 0); });
+  return jsonResponse_({ status: 'success', announcements: out });
+}
+
+/** Create or update one announcement. Returns its id. */
+function handleOwnerSaveAnnouncement(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const subject = String(d.subject || '').trim();
+  const body = String(d.body == null ? '' : d.body);
+  if (!subject || !body.trim()) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  var id = String(d.id || '').trim();
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getAnnouncementsSheet_();
+    const data = sh.getDataRange().getValues();
+    if (id) {
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() !== id) continue;
+        sh.getRange(i + 1, 2).setValue(subject);
+        sh.getRange(i + 1, 3).setValue(body);
+        sh.getRange(i + 1, 5).setValue(new Date());
+        SpreadsheetApp.flush();
+        return jsonResponse_({ status: 'success', id: id });
+      }
+    }
+    id = 'a' + String(Date.now());
+    const now = new Date();
+    sh.appendRow([id, subject, body, now, now]);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success', id: id });
+}
+
+/**
+ * Delete an announcement. Its send log is kept: if she recreates something
+ * similar it gets a new id anyway, and the log is the only record of who was
+ * actually emailed.
+ */
+function handleOwnerDeleteAnnouncement(d) {
+  const secret = PropertiesService.getScriptProperties().getProperty('BOOKING_ADMIN_SECRET');
+  if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
+    return jsonResponse_({ status: 'error', message: 'unauthorized' });
+  }
+  const id = String(d.id || '').trim();
+  if (!id) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(WEB_ACTION_LOCK_TIMEOUT_MS)) {
+    return jsonResponse_({ status: 'error', message: 'server_busy' });
+  }
+  try {
+    const sh = getAnnouncementsSheet_();
+    const data = sh.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0] || '').trim() === id) sh.deleteRow(i + 1);
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return jsonResponse_({ status: 'success' });
 }
 
 /** Recipient count, how many already went out, and today's remaining quota. */
@@ -5397,10 +5630,9 @@ function handleOwnerAnnouncementStatus(d) {
   if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
     return jsonResponse_({ status: 'error', message: 'unauthorized' });
   }
-  const campaign = String(d.campaign || '').trim();
-  if (!campaign) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+  const id = String(d.id || '').trim();
   const recipients = announcementRecipients_();
-  const sent = announcementAlreadySent_(campaign);
+  const sent = id ? announcementAlreadySent_(id) : Object.create(null);
   var remaining = 0;
   for (var i = 0; i < recipients.length; i++) {
     if (!sent[recipients[i].email.toLowerCase()]) remaining++;
@@ -5421,10 +5653,10 @@ function handleOwnerAnnouncementStatus(d) {
 }
 
 /**
- * Send the announcement.
+ * Send an announcement.
  *
  * `testTo` sends ONE copy to that address and logs nothing, so it can be run
- * as many times as she likes. Otherwise it mails unsent recipients, capped by
+ * as often as she likes. Otherwise it mails unsent recipients, capped by
  * `limit` and by the account's remaining Gmail quota, logging each as it goes
  * so the next run continues rather than repeats.
  */
@@ -5433,17 +5665,32 @@ function handleOwnerSendAnnouncement(d) {
   if (!secret || String(d.adminSecret || '').trim() !== String(secret).trim()) {
     return jsonResponse_({ status: 'error', message: 'unauthorized' });
   }
-  const campaign = String(d.campaign || '').trim();
-  if (!campaign) return jsonResponse_({ status: 'error', message: 'missing_fields' });
-  const subject = String(d.subject || '').trim() || ANNOUNCEMENT_SUBJECT;
-  const html = getAnnouncementEmailHtml();
+  const id = String(d.id || '').trim();
+  if (!id) return jsonResponse_({ status: 'error', message: 'missing_fields' });
+
+  var subject = '';
+  var body = '';
+  const adata = getAnnouncementsSheet_().getDataRange().getValues();
+  for (var a = 1; a < adata.length; a++) {
+    if (String(adata[a][0] || '').trim() !== id) continue;
+    subject = String(adata[a][1] || '').trim();
+    body = String(adata[a][2] || '');
+    break;
+  }
+  if (!subject || !body.trim()) return jsonResponse_({ status: 'error', message: 'not_found' });
+  const html = announcementBodyToHtml_(body);
 
   const testTo = String(d.testTo || '').trim();
   if (testTo) {
+    // Stamp the time into the test subject so each test is its own thread.
+    // Gmail groups same-subject messages into one conversation and COLLAPSES
+    // the text repeated from an earlier one behind a "..." — which made a
+    // re-sent test look like the email was being cut off halfway.
+    const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMM d h:mm a');
     MailApp.sendEmail({
       to: testTo,
       name: "Roni's Nail Studio",
-      subject: '[TEST] ' + subject,
+      subject: '[TEST ' + stamp + '] ' + subject,
       htmlBody:
         '<p style="font-family:sans-serif;font-size:14px;color:#b45309;background:#fffbeb;padding:12px;border-radius:8px;border:1px solid #fcd34d;max-width:500px;margin:0 auto 16px;">' +
         '<strong>Test copy.</strong> Clients have NOT been emailed. Their version has no banner and no [TEST] in the subject.</p>' +
@@ -5453,22 +5700,18 @@ function handleOwnerSendAnnouncement(d) {
   }
 
   const recipients = announcementRecipients_();
-  const already = announcementAlreadySent_(campaign);
+  const already = announcementAlreadySent_(id);
   var quota = 0;
   try {
     quota = MailApp.getRemainingDailyQuota();
   } catch (err) {
     quota = 0;
   }
-  // Leave a little headroom so a booking confirmation later today isn't
-  // starved by the blast.
-  const reserve = 10;
-  var budget = Math.max(0, quota - reserve);
+  // Leave headroom so a booking confirmation later today isn't starved.
+  var budget = Math.max(0, quota - 10);
   const askedLimit = Math.floor(Number(d.limit));
   if (isFinite(askedLimit) && askedLimit > 0) budget = Math.min(budget, askedLimit);
-  if (budget <= 0) {
-    return jsonResponse_({ status: 'error', message: 'quota_exhausted' });
-  }
+  if (budget <= 0) return jsonResponse_({ status: 'error', message: 'quota_exhausted' });
 
   const log = getAnnouncementLogSheet_();
   var sent = 0;
@@ -5477,15 +5720,10 @@ function handleOwnerSendAnnouncement(d) {
     const rcp = recipients[i];
     if (already[rcp.email.toLowerCase()]) continue;
     try {
-      MailApp.sendEmail({
-        to: rcp.email,
-        name: "Roni's Nail Studio",
-        subject: subject,
-        htmlBody: html,
-      });
-      // Logged immediately, one row at a time: if this run dies partway, the
-      // next one must not re-mail whoever already got it.
-      log.appendRow([campaign, rcp.email, rcp.name, new Date()]);
+      MailApp.sendEmail({ to: rcp.email, name: "Roni's Nail Studio", subject: subject, htmlBody: html });
+      // Logged one at a time: if this run dies partway, the next must not
+      // re-mail whoever already got it.
+      log.appendRow([id, rcp.email, rcp.name, new Date()]);
       SpreadsheetApp.flush();
       already[rcp.email.toLowerCase()] = true;
       sent++;
