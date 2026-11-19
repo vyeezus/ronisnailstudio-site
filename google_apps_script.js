@@ -1258,6 +1258,7 @@ function handlePublicBookingPost_(d) {
 }
 
 function syncCalendarToSpreadsheet() {
+  drainOverdueDeferredTasks_(); // backstop for a deferred-email trigger that never fired
   if (isCalendarToSheetSyncPaused_()) {
     Logger.log(
       'syncCalendarToSpreadsheet: skipped (pause is ON - run resumeCalendarToSheetSync when safe, or was left on after restore)'
@@ -1839,64 +1840,140 @@ function handleReschedulePost(d) {
  * renders as soon as the essential sheet/calendar state is saved. Best-effort by
  * design: a queued email/title-update lands within ~a minute, not instantly.
  */
-var PROP_DEFERRED_TASKS = 'DEFERRED_CLIENT_TASKS';
+var PROP_DEFERRED_TASKS = 'DEFERRED_CLIENT_TASKS'; // legacy single-array queue (pre 2026-11-18)
+var PROP_DEFERRED_TASK_PREFIX = 'DEFERRED_TASK_';
+var PROP_DEFERRED_TRIGGER_SET_AT = 'DEFERRED_TRIGGER_SET_AT';
+/** A drain trigger older than this never fired: replace it rather than trust it. */
+var DEFERRED_TRIGGER_STALE_MS = 3 * 60 * 1000;
+/** The 5/10-min polls drain anything that has waited longer than this. */
+var DEFERRED_TASK_OVERDUE_MS = 3 * 60 * 1000;
+/**
+ * Owner notifications (emails to MY_EMAIL, pushes) older than this are dropped
+ * instead of sent. Their whole value is "this just happened"; she sees the
+ * booking itself in the app either way. Client emails and calendar retitles are
+ * still delivered however late.
+ */
+var DEFERRED_OWNER_NOTICE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
+/*
+ * Why this changed (2026-11-18): Roni got a burst of days-old "Client confirmed"
+ * / "New Booking Request" emails all at once. Two weaknesses combined:
+ *  1. ensureDeferredTrigger_ returned early whenever ANY drain trigger existed.
+ *     A one-time trigger that never fired (or died before deleting itself)
+ *     therefore blocked every future one, and the queue just grew until
+ *     something finally drained it — sending everything in one burst.
+ *  2. The whole queue lived in ONE script property, which Apps Script caps at
+ *     9KB. A few queued HTML emails overflow it, and setProperty then threw
+ *     inside the booking request itself.
+ * Now: one property per task, stale triggers are replaced, the recurring polls
+ * drain overdue tasks as a backstop, and stale owner notices are dropped.
+ */
 function enqueueDeferredTask_(task) {
-  var props = PropertiesService.getScriptProperties();
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) {
-    // Couldn't grab the queue lock — run it inline so nothing is silently dropped.
-    try { processDeferredTask_(task); } catch (e) { Logger.log('inline deferred task failed: ' + e); }
-    return;
-  }
+  task.queuedAt = Date.now();
+  var key = PROP_DEFERRED_TASK_PREFIX + task.queuedAt + '_' + Math.floor(Math.random() * 1e6);
   try {
-    var raw = props.getProperty(PROP_DEFERRED_TASKS);
-    var arr = [];
-    try { arr = raw ? JSON.parse(raw) : []; } catch (e) { arr = []; }
-    arr.push(task);
-    props.setProperty(PROP_DEFERRED_TASKS, JSON.stringify(arr.slice(-200)));
-  } finally {
-    lock.releaseLock();
+    PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(task));
+  } catch (e) {
+    // Too large for a property, or the store is unavailable: send it now rather
+    // than drop it or fail the caller's request.
+    Logger.log('enqueueDeferredTask_ storing failed, running inline: ' + e);
+    try { processDeferredTask_(task); } catch (e2) { Logger.log('inline deferred task failed: ' + e2); }
   }
 }
 
 function ensureDeferredTrigger_() {
   try {
+    var props = PropertiesService.getScriptProperties();
+    var setAt = Number(props.getProperty(PROP_DEFERRED_TRIGGER_SET_AT) || 0);
     var trigs = ScriptApp.getProjectTriggers();
-    for (var i = 0; i < trigs.length; i++) {
-      if (trigs[i].getHandlerFunction() === 'drainDeferredTasks_') return;
-    }
+    var existing = trigs.filter(function (t) { return t.getHandlerFunction() === 'drainDeferredTasks_'; });
+    if (existing.length && setAt && Date.now() - setAt < DEFERRED_TRIGGER_STALE_MS) return;
+    // None, or one that should have fired minutes ago and didn't: replace it.
+    existing.forEach(function (t) { try { ScriptApp.deleteTrigger(t); } catch (e) {} });
     ScriptApp.newTrigger('drainDeferredTasks_').timeBased().after(1).create();
+    props.setProperty(PROP_DEFERRED_TRIGGER_SET_AT, String(Date.now()));
   } catch (e) {
     Logger.log('ensureDeferredTrigger_ failed: ' + e);
   }
 }
 
-function drainDeferredTasks_() {
+/** Claim every queued task (removing it from the store) under the script lock. */
+function takeDeferredTasks_() {
   var props = PropertiesService.getScriptProperties();
   var lock = LockService.getScriptLock();
   var tasks = [];
-  if (lock.tryLock(20000)) {
-    try {
-      var raw = props.getProperty(PROP_DEFERRED_TASKS);
-      try { tasks = raw ? JSON.parse(raw) : []; } catch (e) { tasks = []; }
-      props.deleteProperty(PROP_DEFERRED_TASKS);
-    } finally {
-      lock.releaseLock();
+  if (!lock.tryLock(20000)) return null;
+  try {
+    var all = props.getProperties();
+    var keys = Object.keys(all).filter(function (k) { return k.indexOf(PROP_DEFERRED_TASK_PREFIX) === 0; }).sort();
+    for (var i = 0; i < keys.length; i++) {
+      try { tasks.push(JSON.parse(all[keys[i]])); } catch (e) {}
+      props.deleteProperty(keys[i]);
     }
+    if (all[PROP_DEFERRED_TASKS]) {
+      try { tasks = tasks.concat(JSON.parse(all[PROP_DEFERRED_TASKS]) || []); } catch (e) {}
+      props.deleteProperty(PROP_DEFERRED_TASKS);
+    }
+  } finally {
+    lock.releaseLock();
   }
+  return tasks;
+}
+
+function runDeferredTasks_(tasks) {
+  var now = Date.now();
+  for (var j = 0; j < tasks.length; j++) {
+    var task = tasks[j];
+    var age = task && task.queuedAt ? now - task.queuedAt : Infinity; // legacy tasks carry no stamp
+    var ownerNotice = task && (task.kind === 'push' || (task.kind === 'email' && task.to === MY_EMAIL));
+    if (ownerNotice && age > DEFERRED_OWNER_NOTICE_MAX_AGE_MS) {
+      Logger.log('dropping stale owner notice: ' + (task.subject || task.title || task.kind));
+      continue;
+    }
+    try { processDeferredTask_(task); } catch (e) { Logger.log('deferred task failed: ' + e); }
+  }
+}
+
+function hasDeferredTasks_(olderThanMs) {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  if (all[PROP_DEFERRED_TASKS]) return true;
+  var cutoff = Date.now() - (olderThanMs || 0);
+  for (var k in all) {
+    if (k.indexOf(PROP_DEFERRED_TASK_PREFIX) !== 0) continue;
+    var ts = Number(k.slice(PROP_DEFERRED_TASK_PREFIX.length).split('_')[0]);
+    if (!olderThanMs || !(ts > cutoff)) return true;
+  }
+  return false;
+}
+
+function drainDeferredTasks_() {
+  var tasks = takeDeferredTasks_() || [];
   // One-time trigger: remove it (and any duplicates) now that we've drained.
   try {
     var trigs = ScriptApp.getProjectTriggers();
     for (var t = 0; t < trigs.length; t++) {
       if (trigs[t].getHandlerFunction() === 'drainDeferredTasks_') ScriptApp.deleteTrigger(trigs[t]);
     }
+    PropertiesService.getScriptProperties().deleteProperty(PROP_DEFERRED_TRIGGER_SET_AT);
   } catch (e) { Logger.log('drain trigger cleanup failed: ' + e); }
-  for (var j = 0; j < tasks.length; j++) {
-    try { processDeferredTask_(tasks[j]); } catch (e) { Logger.log('deferred task failed: ' + e); }
+  runDeferredTasks_(tasks);
+  // If new tasks were queued while draining (or the lock was busy), go again.
+  try { if (hasDeferredTasks_(0)) ensureDeferredTrigger_(); } catch (e) {}
+}
+
+/**
+ * Backstop, called from the recurring polls: if anything has sat in the queue
+ * past DEFERRED_TASK_OVERDUE_MS, the one-time trigger didn't do its job, so
+ * drain right here instead of waiting on it.
+ */
+function drainOverdueDeferredTasks_() {
+  try {
+    if (!hasDeferredTasks_(DEFERRED_TASK_OVERDUE_MS)) return;
+    var tasks = takeDeferredTasks_();
+    if (tasks && tasks.length) runDeferredTasks_(tasks);
+  } catch (e) {
+    Logger.log('drainOverdueDeferredTasks_ failed: ' + e);
   }
-  // If new tasks were queued while draining, schedule another pass.
-  try { if (props.getProperty(PROP_DEFERRED_TASKS)) ensureDeferredTrigger_(); } catch (e) {}
 }
 
 function processDeferredTask_(task) {
@@ -4164,6 +4241,7 @@ function capArray_(arr, max) {
  * WITHOUT pushing, so the owner isn't blasted for pre-existing requests.
  */
 function checkNewBookingsAndPush() {
+  drainOverdueDeferredTasks_();
   var props = PropertiesService.getScriptProperties();
   var tokens = [];
   try {
